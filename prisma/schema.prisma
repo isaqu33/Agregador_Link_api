@@ -1,0 +1,35 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// tabela de user
+model User {
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  photoURL String?
+  template String?
+  title    String?
+  about    String?
+  links    Link[]
+}
+
+// tabela de link
+model Link {
+  id        String  @id @default(uuid())
+  name      String
+  link      String
+  type      String
+  isActivit Boolean @default(true)
+  User      User?   @relation(fields: [userId], references: [id])
+  userId    String?
+}
