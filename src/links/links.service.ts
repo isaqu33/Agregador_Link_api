@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { User, UserDocument } from './../user/schemas/user.schema';
 import { CreateLinkDto } from './dto/create-link.dto';
+import { EditLinkDto } from './dto/edit-link.dto';
 import { Link, LinkDocument } from './schemas/link.schema';
 
 @Injectable()
@@ -13,7 +14,14 @@ export class LinksService {
   ) {}
 
   async createlink(userId: string, { name, link, type }: CreateLinkDto) {
-    return this.linkModel.create({ name, link, type, userId });
+    // goes to the end of the list
+    const last = await this.linkModel
+      .findOne({ userId })
+      .sort({ order: -1 })
+      .select('order');
+    const order = last ? last.order + 1 : 0;
+
+    return this.linkModel.create({ name, link, type, userId, order });
   }
 
   async removelink(userId: string, idlink: string) {
@@ -30,10 +38,9 @@ export class LinksService {
       : null;
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
-    const links = await this.linkModel.find({
-      userId: user._id,
-      isActivit: true,
-    });
+    const links = await this.linkModel
+      .find({ userId: user._id, isActivit: true })
+      .sort({ order: 1, _id: 1 });
     const { name, photoURL, template, title, about } = user;
 
     return {
@@ -52,6 +59,33 @@ export class LinksService {
     link.isActivit = activation;
 
     return link.save();
+  }
+
+  // Only name and link are editable; the type stays as created.
+  async updateLink(userId: string, { id, name, link }: EditLinkDto) {
+    const found = await this.findOwnedLink(userId, id);
+    if (name !== undefined) found.name = name;
+    if (link !== undefined) found.link = link;
+
+    return found.save();
+  }
+
+  // Position i in `ids` becomes order i. Every id must belong to the user.
+  async reorder(userId: string, ids: string[]) {
+    const owned = await this.linkModel.countDocuments({
+      _id: { $in: ids.filter((id) => isValidObjectId(id)) },
+      userId,
+    });
+    if (owned !== ids.length)
+      throw new NotFoundException('Link não encontrado');
+
+    await this.linkModel.bulkWrite(
+      ids.map((id, order) => ({
+        updateOne: { filter: { _id: id, userId }, update: { $set: { order } } },
+      })),
+    );
+
+    return { ok: true };
   }
 
   // A link that belongs to someone else is reported as missing, so ids can't be probed.
