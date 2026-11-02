@@ -13,9 +13,7 @@ services:
       - .env
     environment:
       PORT: 3000
-      # SQLite lives in a named volume so migrations survive container recreation.
-      # Overrides the host-relative path in .env.
-      DATABASE_URL: file:/app/data/dev.db
+      DATABASE_URL: 'mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo-agregador:27017/agregador?authSource=admin'
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3071}
       # Local storage is always Azurite; nothing is stored in Firebase.
       AZURE_STORAGE_CONNECTION_STRING: ${DEV_AZURE_STORAGE_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-agregador:10000/devstoreaccount1;}
@@ -23,13 +21,33 @@ services:
       - .:/app
       - /app/node_modules
       - /app/dist
-      - api_data:/app/data
     networks:
       - agregador-network
     restart: unless-stopped
     depends_on:
       azurite:
         condition: service_started
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    container_name: mongo-agregador
+    image: mongo:6.0
+    ports:
+      - '${MONGO_PORT_HOST:-27070}:27017'
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - agregador-network
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   azurite:
     container_name: azurite-agregador
@@ -52,5 +70,5 @@ networks:
     driver: bridge
 
 volumes:
-  api_data:
+  mongo_data:
   azurite_data:

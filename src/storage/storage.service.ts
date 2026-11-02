@@ -18,8 +18,8 @@ const EXTENSION_BY_MIME: Record<string, string> = {
 
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
-// Blob names this service generates: <userId>/<uuid>.<ext>
-const BLOB_NAME = /^[0-9a-f-]{36}\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+// Blob names this service generates: <userId>/<uuid>.<ext> (userId is a Mongo ObjectId)
+const BLOB_NAME = /^[0-9a-f]{24}\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
 
 @Injectable()
 export class StorageService implements OnModuleInit {
