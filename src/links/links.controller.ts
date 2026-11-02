@@ -20,7 +20,7 @@ export class LinksController {
   @Post('addLink')
   @UseGuards(JwtAuthGuard)
   createNewLink(@Req() req, @Body() data: CreateLinkDto) {
-    return this.linksService.createlink(req.user.username, data);
+    return this.linksService.createlink(req.user.sub, data);
   }
 
   @Get('getDataUser/:id')
@@ -31,14 +31,14 @@ export class LinksController {
   @Post('deletLink')
   @UseGuards(JwtAuthGuard)
   removeLink(@Req() req, @Body() data: DeleteLinkDto) {
-    return this.linksService.removelink(req.user.username, data.idlink);
+    return this.linksService.removelink(req.user.sub, data.idlink);
   }
 
   @Post('editActivet')
   @UseGuards(JwtAuthGuard)
   editarAtivo(@Req() req, @Body() data: EditActiveDto) {
     return this.linksService.updateActive(
-      req.user.username,
+      req.user.sub,
       data.id,
       data.activation,
     );

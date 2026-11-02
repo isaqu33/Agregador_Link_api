@@ -36,10 +36,8 @@ lerna-debug.log*
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
-# Local secrets and data
 .env
 .env.*
 !.env.example
 *firebase-adminsdk*.json
-prisma/dev.db*
 /data

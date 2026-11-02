@@ -1,77 +1,64 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { isValidObjectId, Model } from 'mongoose';
+import { User, UserDocument } from './../user/schemas/user.schema';
 import { CreateLinkDto } from './dto/create-link.dto';
-import { PrismaService } from './../DataBase/prisma.service';
+import { Link, LinkDocument } from './schemas/link.schema';
 
 @Injectable()
 export class LinksService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    @InjectModel(Link.name) private linkModel: Model<LinkDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+  ) {}
 
-  async createlink(email: string, { name, link, type }: CreateLinkDto) {
-    return await this.prisma.link.create({
-      data: {
-        name,
-        link,
-        type,
-        User: {
-          connect: {
-            email,
-          },
-        },
-      },
-    });
+  async createlink(userId: string, { name, link, type }: CreateLinkDto) {
+    return this.linkModel.create({ name, link, type, userId });
   }
 
-  async removelink(email: string, idlink: string) {
-    await this.findOwnedLink(email, idlink);
+  async removelink(userId: string, idlink: string) {
+    const link = await this.findOwnedLink(userId, idlink);
+    await link.deleteOne();
 
-    return await this.prisma.link.delete({
-      where: {
-        id: idlink,
-      },
-    });
+    return link;
   }
 
   // Public page: no email, and inactive links stay hidden.
-  async findAllDataUserById(UserId: string) {
-    const dataUser = await this.prisma.user.findUnique({
-      where: {
-        id: UserId,
-      },
-      select: {
-        id: true,
-        name: true,
-        photoURL: true,
-        template: true,
-        title: true,
-        about: true,
-        links: { where: { isActivit: true } },
-      },
+  async findAllDataUserById(userId: string) {
+    const user = isValidObjectId(userId)
+      ? await this.userModel.findById(userId)
+      : null;
+    if (!user) throw new NotFoundException('Usuário não encontrado');
+
+    const links = await this.linkModel.find({
+      userId: user._id,
+      isActivit: true,
     });
+    const { name, photoURL, template, title, about } = user;
 
-    if (!dataUser) throw new NotFoundException('Usuário não encontrado');
-
-    return dataUser;
+    return {
+      id: String(user._id),
+      name,
+      photoURL,
+      template,
+      title,
+      about,
+      links,
+    };
   }
 
-  async updateActive(email: string, LinkId: string, activation: boolean) {
-    await this.findOwnedLink(email, LinkId);
+  async updateActive(userId: string, linkId: string, activation: boolean) {
+    const link = await this.findOwnedLink(userId, linkId);
+    link.isActivit = activation;
 
-    return await this.prisma.link.update({
-      where: {
-        id: LinkId,
-      },
-      data: {
-        isActivit: activation,
-      },
-    });
+    return link.save();
   }
 
   // A link that belongs to someone else is reported as missing, so ids can't be probed.
-  private async findOwnedLink(email: string, id: string) {
-    const link = await this.prisma.link.findFirst({
-      where: { id, User: { email } },
-    });
-
+  private async findOwnedLink(userId: string, id: string) {
+    const link = isValidObjectId(id)
+      ? await this.linkModel.findOne({ _id: id, userId })
+      : null;
     if (!link) throw new NotFoundException('Link não encontrado');
 
     return link;

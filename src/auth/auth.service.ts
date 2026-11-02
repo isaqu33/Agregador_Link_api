@@ -25,17 +25,27 @@ export class AuthService {
       throw new ConflictException('Email já cadastrado');
     }
 
-    const user = await this.userService.createNewUser({
-      name: name.trim(),
-      email: normalizedEmail,
-      passwordHash: await bcrypt.hash(password, 12),
-    });
+    try {
+      const user = await this.userService.createNewUser({
+        name: name.trim(),
+        email: normalizedEmail,
+        passwordHash: await bcrypt.hash(password, 12),
+      });
 
-    return this.issueToken(user);
+      return this.issueToken(user);
+    } catch (error) {
+      // two simultaneous sign-ups for the same email: the unique index wins
+      if ((error as { code?: number }).code === 11000) {
+        throw new ConflictException('Email já cadastrado');
+      }
+      throw error;
+    }
   }
 
   async login({ email, password }: LoginDto) {
-    const user = await this.userService.findOne(email.trim().toLowerCase());
+    const user = await this.userService.findByEmailWithPassword(
+      email.trim().toLowerCase(),
+    );
     const valid = await bcrypt.compare(password, user?.password ?? DUMMY_HASH);
 
     if (!user || !user.password || !valid) {
@@ -45,14 +55,15 @@ export class AuthService {
     return this.issueToken(user);
   }
 
-  private issueToken(user: { id: string; email: string; name: string }) {
+  private issueToken(user: { _id: unknown; email: string; name: string }) {
+    const id = String(user._id);
     const { accessToken } = this.jwtAuthService.login({
-      id: user.id,
+      id,
       username: user.email,
     });
     return {
       accessToken,
-      user: { id: user.id, name: user.name, email: user.email },
+      user: { id, name: user.name, email: user.email },
     };
   }
 }

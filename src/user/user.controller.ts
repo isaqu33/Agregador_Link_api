@@ -10,12 +10,12 @@ export class UserController {
   @Get('me')
   @UseGuards(JwtAuthGuard)
   findeMe(@Req() req) {
-    return this.userService.findMe(req.user.username);
+    return this.userService.findMe(req.user.sub);
   }
 
   @Post('editProfile')
   @UseGuards(JwtAuthGuard)
   editStile(@Req() req, @Body() data: UpdateUserDto) {
-    return this.userService.editProfireUser(req.user.username, data);
+    return this.userService.editProfireUser(req.user.sub, data);
   }
 }
