@@ -1,73 +1,52 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+# Agregador de Links — API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend do agregador de links (estilo Linktree): cadastro e login por email e senha, perfil, links e upload de
+imagens. O front está em [Agregador_Link_Front](https://github.com/isaqu33/Agregador_Link_Front).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+- **Stack:** NestJS 8, MongoDB (Mongoose), JWT, Azure Blob Storage (Azurite em desenvolvimento)
+- **Docs:** [`docs/`](docs/README.md) — endpoints, modelos, variáveis e armadilhas
 
-## Description
+## Requisitos
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+Docker e Docker Compose. Para rodar fora do Docker, Node 20.
 
-## Installation
+## Rodando (desenvolvimento)
 
 ```bash
-$ npm install
+cp .env.example .env            # defina SECRET_JWT (openssl rand -hex 32) e as credenciais SEED_USER_*
+docker compose -f docker-compose.dev.yml up -d --build -V
+docker compose -f docker-compose.dev.yml exec api npm run seed   # cria o primeiro usuário
 ```
 
-## Running the app
+Suba a API **antes** do front: ela cria a rede `agregador-network` que o front usa.
+
+| Serviço | URL / porta |
+|---|---|
+| API | http://localhost:3070 |
+| MongoDB | localhost:27070 |
+| Azurite (blob) | localhost:10070 |
+
+## Principais rotas
+
+| Rota | Auth |
+|---|---|
+| `POST /auth/register`, `POST /auth/login` | — |
+| `GET /user/me`, `POST /user/editProfile` | JWT |
+| `POST /links/addLink`, `/links/deletLink`, `/links/editActivet` | JWT |
+| `GET /links/getDataUser/:id` (página pública) | — |
+| `POST /media` (upload), `GET /media/:userId/:file` | JWT / — |
+
+Detalhes em [`docs/back.md`](docs/back.md).
+
+## Verificação
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npx tsc --noEmit
+npx eslint "{src,test}/**/*.ts"
+npx jest
 ```
 
-## Test
+## Segurança
 
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
-```
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://kamilmysliwiec.com)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](LICENSE).
+`.env` não é versionado. O histórico antigo deste repositório contém uma chave do Firebase e um `.env` antigos:
+revogue a chave e mantenha o repositório privado.
