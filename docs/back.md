@@ -36,6 +36,8 @@ mantém `node_modules` velho.
 | `POST /user/editProfile` | JWT | só `name,photoURL,template,title,about`; campo extra → 400 |
 | `POST /links/addLink` | JWT | `{name,link,type}`; `link` só http/https |
 | `POST /links/deletLink` | JWT | `{idlink}`; só o dono (senão 404) |
+| `POST /links/editLink` | JWT | `{id,name?,link?}`; só o dono (senão 404); `link` só http/https; `type` não é editável (campo extra → 400) |
+| `POST /links/reorder` | JWT | `{ids:[...]}` na nova ordem (sem repetidos); todos têm de ser do dono (senão 404); grava `order = posição` |
 | `POST /links/editActivet` | JWT | `{id,activation}`; só o dono |
 | `GET /links/getDataUser/:id` | — | página pública: sem email, só links ativos; 404 se não existe |
 | `POST /media` | JWT | multipart `file`; JPEG/PNG/WebP/GIF até 5 MB → `{url:'/media/<userId>/<uuid>.<ext>'}` |
@@ -49,7 +51,8 @@ sem mudar os dois lados.
 
 - `User`: `name`, `email` (único, minúsculo), `password` (hash, `select:false`), `photoURL`, `template` (JSON em string:
   `{cor, formato}`), `title`, `about`.
-- `Link`: `name`, `link`, `type`, `isActivit` (default true), `userId` (ObjectId → User).
+- `Link`: `name`, `link`, `type`, `isActivit` (default true), `order` (default 0), `userId` (ObjectId → User). Listagens
+  (`/user/me` e página pública) ordenam por `order` e depois `_id`; link novo vai para o fim (`max(order)+1`).
 
 Para consultar o banco: `docker exec mongo-agregador mongosh -u agregador_user -p agregador_pass_local --authenticationDatabase admin agregador`.
 
