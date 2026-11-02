@@ -6,7 +6,7 @@ import { JwtPayload } from './jwt-auth.strategy';
 export class JwtAuthService {
   constructor(private jwtService: JwtService) {}
 
-  login(user) {
+  login(user: { id: string; username: string }) {
     const payload: JwtPayload = { username: user.username, sub: user.id };
     return {
       accessToken: this.jwtService.sign(payload),

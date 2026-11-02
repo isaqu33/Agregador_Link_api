@@ -1,0 +1,14 @@
+.git
+dist/
+node_modules/
+npm-debug.log
+.DS_Store
+README.md
+docker-compose*.yml
+
+# Secrets and local data never enter the build context
+.env
+.env.*
+!.env.example
+*firebase-adminsdk*.json
+prisma/dev.db*

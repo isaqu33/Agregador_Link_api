@@ -6,57 +6,60 @@ import { User } from '@prisma/client';
 
 @Injectable()
 export class UserService {
+  constructor(private prisma: PrismaService) {}
 
-  constructor(private prisma: PrismaService) { }
-
-  async findOne(email): Promise<User | undefined> {
-
+  // Includes the password hash: for internal use only, never return this to a client.
+  async findOne(email: string): Promise<(User & { links: unknown[] }) | null> {
     return await this.prisma.user.findUnique({
       where: {
-        email: email
+        email: email,
       },
-      include:{
-        links: true
-      }
-    })
+      include: {
+        links: true,
+      },
+    });
   }
 
-  async createNewUser(Data: CreateUserDto): Promise<any> {
+  async findMe(email: string) {
+    const user = await this.findOne(email);
+    if (!user) return null;
 
-    const { name, email } = Data
+    return this.withoutPassword(user);
+  }
 
-    await this.prisma.user.create({
-
+  async createNewUser({
+    name,
+    email,
+    passwordHash,
+  }: CreateUserDto): Promise<User> {
+    return await this.prisma.user.create({
       data: {
-
         name,
         email,
-
-
-      }
-    })
-  }
-
-  async editProfireUser(email, Data: UpdateUserDto | any): Promise<any> {
-
-    return await this.prisma.user.update({
-      where: {
-        email: email
+        password: passwordHash,
       },
-      data: {
-        
-        ...Data
-        
-      }
-    })
-
+    });
   }
 
+  async editProfireUser(
+    email: string,
+    { name, photoURL, template, title, about }: UpdateUserDto,
+  ) {
+    const user = await this.prisma.user.update({
+      where: {
+        email: email,
+      },
+      data: { name, photoURL, template, title, about },
+    });
 
+    return this.withoutPassword(user);
+  }
 
-
-
-
-
-
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private withoutPassword<T extends { password: string | null }>({
+    password: _password,
+    ...rest
+  }: T) {
+    return rest;
+  }
 }
