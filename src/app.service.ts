@@ -7,6 +7,6 @@ export class AppService {
   }
 
   getHellofromroutText() {
-    return "hello from route texte"
+    return 'hello from route texte';
   }
 }

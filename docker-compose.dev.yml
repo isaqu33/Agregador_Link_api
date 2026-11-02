@@ -1,0 +1,56 @@
+name: agregador_link
+
+services:
+  api:
+    container_name: agregador-api-dev
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - '${API_PORT_HOST:-3070}:3000'
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      # SQLite lives in a named volume so migrations survive container recreation.
+      # Overrides the host-relative path in .env.
+      DATABASE_URL: file:/app/data/dev.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3071}
+      # Local storage is always Azurite; nothing is stored in Firebase.
+      AZURE_STORAGE_CONNECTION_STRING: ${DEV_AZURE_STORAGE_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite-agregador:10000/devstoreaccount1;}
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/dist
+      - api_data:/app/data
+    networks:
+      - agregador-network
+    restart: unless-stopped
+    depends_on:
+      azurite:
+        condition: service_started
+
+  azurite:
+    container_name: azurite-agregador
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    # -l /data makes the volume actually hold the blobs; without it uploads are
+    # lost whenever the container is recreated.
+    command: azurite-blob --blobHost 0.0.0.0 --loose --skipApiVersionCheck -l /data
+    ports:
+      - '${AZURITE_BLOB_PORT_HOST:-10070}:10000'
+    volumes:
+      - azurite_data:/data
+    networks:
+      - agregador-network
+    restart: unless-stopped
+
+networks:
+  # Fixed name so the front compose (Agregador_Link_Front) can join it as external.
+  agregador-network:
+    name: agregador-network
+    driver: bridge
+
+volumes:
+  api_data:
+  azurite_data:

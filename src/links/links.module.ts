@@ -10,4 +10,4 @@ import { PrismaModule } from './../DataBase/prisma.module';
   providers: [LinksService],
   exports: [LinksService],
 })
-export class LinksModule { }
+export class LinksModule {}

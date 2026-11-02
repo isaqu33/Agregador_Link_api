@@ -1,95 +1,79 @@
-import { Link } from '@prisma/client';
-// import { User } from './../user/entities/user.entity';
-
-
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateLinkDto } from './dto/create-link.dto';
-import { UpdateLinkDto } from './dto/update-link.dto';
-
-
 import { PrismaService } from './../DataBase/prisma.service';
-import { User } from '@prisma/client';
-// import { Link } from './entities/link.entity';
 
 @Injectable()
 export class LinksService {
+  constructor(private prisma: PrismaService) {}
 
-  constructor(private prisma: PrismaService,) { }
-
-  create(createLinkDto: CreateLinkDto) {
-    return 'This action adds a new link';
-  }
-
-  async createlink(email, Data: CreateLinkDto): Promise<any> {
-    const linkCreated = await this.prisma.link.create({
+  async createlink(email: string, { name, link, type }: CreateLinkDto) {
+    return await this.prisma.link.create({
       data: {
-
-        ...Data,
-
+        name,
+        link,
+        type,
         User: {
           connect: {
-            email
-          }
+            email,
+          },
         },
-
       },
-
-      include: {
-        User: true,
-      },
-    })
-
-    return linkCreated;
-
+    });
   }
 
-  async removelink(email, idlink: string): Promise<any> {
-    let linkdeleted = await this.prisma.link.delete({
+  async removelink(email: string, idlink: string) {
+    await this.findOwnedLink(email, idlink);
+
+    return await this.prisma.link.delete({
       where: {
-        id: idlink
-      }
-    })
-
-    return linkdeleted;
+        id: idlink,
+      },
+    });
   }
 
-  async findAllDataUserById(UserId: string): Promise<any> {
+  // Public page: no email, and inactive links stay hidden.
+  async findAllDataUserById(UserId: string) {
     const dataUser = await this.prisma.user.findUnique({
       where: {
-        id: UserId
+        id: UserId,
       },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        photoURL: true,
+        template: true,
+        title: true,
+        about: true,
+        links: { where: { isActivit: true } },
+      },
+    });
 
-        links: true
-      }
+    if (!dataUser) throw new NotFoundException('Usuário não encontrado');
 
-    })
-
-    const { name, email, photoURL, template, title, about, links } = dataUser
-
-    return dataUser
+    return dataUser;
   }
 
-  async updateActive(LinkId: string, activation: Boolean): Promise<any> {
-    const result = await this.prisma.link.update({
+  async updateActive(email: string, LinkId: string, activation: boolean) {
+    await this.findOwnedLink(email, LinkId);
+
+    return await this.prisma.link.update({
       where: {
         id: LinkId,
       },
       data: {
-        isActivit: activation as boolean,
+        isActivit: activation,
       },
-    })
-
-    return result
+    });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} link`;
+  // A link that belongs to someone else is reported as missing, so ids can't be probed.
+  private async findOwnedLink(email: string, id: string) {
+    const link = await this.prisma.link.findFirst({
+      where: { id, User: { email } },
+    });
+
+    if (!link) throw new NotFoundException('Link não encontrado');
+
+    return link;
   }
-
-  update(id: number, updateLinkDto: UpdateLinkDto) {
-    return `This action updates a #${id} link`;
-  }
-
-
 }

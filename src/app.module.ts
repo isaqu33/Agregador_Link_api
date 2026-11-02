@@ -1,40 +1,25 @@
-import { AuthService } from './auth/auth.service';
-import { UserService } from 'src/user/user.service';
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { UserModule } from './user/user.module';
-
 import { AuthModule } from './auth/auth.module';
-
-import { PrismaService } from './DataBase/prisma.service';
 import { JwtAuthModule } from './jwt/jwt.module';
-import { ConfigModule } from '@nestjs/config'
-
-import { APP_GUARD } from '@nestjs/core';
 import { LinksModule } from './links/links.module';
-
-
-
-
+import { StorageModule } from './storage/storage.module';
 
 @Module({
   imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
     UserModule,
     AuthModule,
     JwtAuthModule,
-    ConfigModule.forRoot({
-      isGlobal: true
-    }),
     LinksModule,
+    StorageModule,
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    AuthService,
-    UserService,
-    PrismaService,
-  ],
-
+  providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}
