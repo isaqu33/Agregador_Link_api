@@ -28,7 +28,9 @@ export class UserService {
     const user = await this.userModel.findById(userId);
     if (!user) return null;
 
-    const links = await this.linkModel.find({ userId: user._id });
+    const links = await this.linkModel
+      .find({ userId: user._id })
+      .sort({ order: 1, _id: 1 });
     return { ...user.toJSON(), links };
   }
 

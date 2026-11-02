@@ -11,6 +11,8 @@ import { LinksService } from './links.service';
 import { CreateLinkDto } from './dto/create-link.dto';
 import { DeleteLinkDto } from './dto/delete-link.dto';
 import { EditActiveDto } from './dto/edit-active.dto';
+import { EditLinkDto } from './dto/edit-link.dto';
+import { ReorderLinksDto } from './dto/reorder-links.dto';
 import { JwtAuthGuard } from 'src/jwt/jwt-auth.guard';
 
 @Controller('links')
@@ -32,6 +34,18 @@ export class LinksController {
   @UseGuards(JwtAuthGuard)
   removeLink(@Req() req, @Body() data: DeleteLinkDto) {
     return this.linksService.removelink(req.user.sub, data.idlink);
+  }
+
+  @Post('editLink')
+  @UseGuards(JwtAuthGuard)
+  editarLink(@Req() req, @Body() data: EditLinkDto) {
+    return this.linksService.updateLink(req.user.sub, data);
+  }
+
+  @Post('reorder')
+  @UseGuards(JwtAuthGuard)
+  reordenar(@Req() req, @Body() data: ReorderLinksDto) {
+    return this.linksService.reorder(req.user.sub, data.ids);
   }
 
   @Post('editActivet')

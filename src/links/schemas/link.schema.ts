@@ -22,6 +22,11 @@ export class Link {
   @Prop({ required: true })
   type: string;
 
+  // Display position (ascending). Links created before this field existed default to 0
+  // and fall back to creation order.
+  @Prop({ default: 0 })
+  order: number;
+
   // Kept with the original (misspelled) name: the front reads it.
   @Prop({ default: true })
   isActivit: boolean;
