@@ -5,7 +5,8 @@ Dois repositórios, uma aplicação (estilo Linktree):
 | Projeto | Repositório | Stack | Doc |
 |---|---|---|---|
 | Backend | `Agregador_Link_api` | NestJS 8, Mongoose (MongoDB), Azure Blob (Azurite em dev) | [back.md](back.md) |
-| Front | `Agregador_Link_Front` | Next.js 14 (App Router), Auth.js v5, Chakra UI, Redux, react-query | [front.md](front.md) |
+| Front | `Agregador_Link_Front` | Next.js 14 (App Router), Auth.js v5, Chakra UI, react-query, MobX | [front.md](front.md) |
+| Produto | — | Funcionalidades (referência Linktree) e roadmap | [features.md](features.md) |
 
 ## Regra de sincronização
 
