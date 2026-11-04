@@ -41,3 +41,7 @@ lerna-debug.log*
 !.env.example
 *firebase-adminsdk*.json
 /data
+
+# Contexto do Claude (não versionar)
+/docs/
+/CLAUDE.md
