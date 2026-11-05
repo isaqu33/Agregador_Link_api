@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { interval, merge, Observable, Subject } from 'rxjs';
+import { CacheService } from '../cache/cache.service';
 import { filter, map } from 'rxjs/operators';
 import { Link, LinkDocument } from '../links/schemas/link.schema';
 import { User, UserDocument } from '../user/schemas/user.schema';
@@ -9,7 +10,8 @@ import { Event, EventDocument } from './schemas/event.schema';
 
 const TZ = 'America/Sao_Paulo';
 // same visitor + same target inside this window counts once (refresh/double click)
-const THROTTLE_MS = 3000;
+const THROTTLE_SECONDS = 3;
+const CHANNEL = 'analytics:live';
 
 export interface LiveEvent {
   userId: string;
@@ -20,22 +22,32 @@ export interface LiveEvent {
 
 @Injectable()
 export class AnalyticsService {
-  private recent = new Map<string, number>();
-  // live feed for SSE; lives in this process (a second API instance would need Redis/Mongo change streams)
+  // live feed for SSE: events travel through the cache (Redis when configured), so every API
+  // instance sees the views/clicks recorded by any other one
   private live = new Subject<LiveEvent>();
 
   constructor(
     @InjectModel(Event.name) private eventModel: Model<EventDocument>,
     @InjectModel(Link.name) private linkModel: Model<LinkDocument>,
     @InjectModel(User.name) private userModel: Model<UserDocument>,
-  ) {}
+    private cache: CacheService,
+  ) {
+    this.cache.subscribe(CHANNEL, (message) => {
+      try {
+        this.live.next(JSON.parse(message) as LiveEvent);
+      } catch {
+        // ignore malformed messages
+      }
+    });
+  }
 
-  private seenRecently(key: string) {
-    const now = Date.now();
-    for (const [k, t] of this.recent) if (now - t > THROTTLE_MS) this.recent.delete(k);
-    if (this.recent.has(key)) return true;
-    this.recent.set(key, now);
-    return false;
+  // same visitor + same target inside the window counts once (refresh / double click)
+  private async seenRecently(key: string) {
+    return (await this.cache.incr(`dedupe:${key}`, THROTTLE_SECONDS)) > 1;
+  }
+
+  private emit(event: LiveEvent) {
+    return this.cache.publish(CHANNEL, JSON.stringify(event));
   }
 
   // Never throws for unknown targets: tracking must not break the public page.
@@ -44,20 +56,24 @@ export class AnalyticsService {
     const user = isValidObjectId(profile)
       ? await this.userModel.findById(profile).select('_id')
       : await this.userModel.findOne({ username: handle }).select('_id');
-    if (!user || this.seenRecently(`v|${visitor}|${user._id}`)) return { ok: true };
+    if (!user || (await this.seenRecently(`v|${visitor}|${user._id}`))) {
+      return { ok: true };
+    }
 
     await this.eventModel.create({ userId: user._id, type: 'view' });
-    this.live.next({ userId: String(user._id), type: 'view', at: new Date().toISOString() });
+    await this.emit({ userId: String(user._id), type: 'view', at: new Date().toISOString() });
     return { ok: true };
   }
 
   async trackClick(visitor: string, linkId: string) {
     if (!isValidObjectId(linkId)) return { ok: true };
     const link = await this.linkModel.findOne({ _id: linkId, isActivit: true }).select('userId');
-    if (!link || this.seenRecently(`c|${visitor}|${linkId}`)) return { ok: true };
+    if (!link || (await this.seenRecently(`c|${visitor}|${linkId}`))) {
+      return { ok: true };
+    }
 
     await this.eventModel.create({ userId: link.userId, type: 'click', linkId: link._id });
-    this.live.next({
+    await this.emit({
       userId: String(link.userId),
       type: 'click',
       linkId: String(link._id),
