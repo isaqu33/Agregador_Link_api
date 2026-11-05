@@ -16,7 +16,8 @@ export class Link {
   @Prop({ required: true })
   name: string;
 
-  @Prop({ required: true })
+  // empty for headers (type Cabecalho)
+  @Prop({ default: '' })
   link: string;
 
   @Prop({ required: true })

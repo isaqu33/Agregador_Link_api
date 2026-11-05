@@ -1,4 +1,5 @@
-import { IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { LINK_TYPES } from '../../common/link-rules';
 
 export class CreateLinkDto {
   @IsString()
@@ -6,12 +7,12 @@ export class CreateLinkDto {
   @MaxLength(100)
   name: string;
 
-  // http/https only: blocks javascript: and data: URLs on the public page
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
-  @MaxLength(2000)
-  link: string;
-
+  // validated against `type` in LinksService (http/https, mailto:, tel: — never javascript:)
+  @IsOptional()
   @IsString()
-  @MaxLength(50)
+  @MaxLength(2000)
+  link?: string;
+
+  @IsIn(LINK_TYPES)
   type: string;
 }

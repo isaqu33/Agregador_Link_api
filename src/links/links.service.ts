@@ -5,6 +5,7 @@ import { User, UserDocument } from './../user/schemas/user.schema';
 import { CreateLinkDto } from './dto/create-link.dto';
 import { EditLinkDto } from './dto/edit-link.dto';
 import { Link, LinkDocument } from './schemas/link.schema';
+import { assertValidLink } from '../common/link-rules';
 
 @Injectable()
 export class LinksService {
@@ -14,6 +15,9 @@ export class LinksService {
   ) {}
 
   async createlink(userId: string, { name, link, type }: CreateLinkDto) {
+    assertValidLink(type, link);
+    link = type === 'Cabecalho' ? '' : link;
+
     // goes to the end of the list
     const last = await this.linkModel
       .findOne({ userId })
@@ -31,17 +35,18 @@ export class LinksService {
     return link;
   }
 
-  // Public page: no email, and inactive links stay hidden.
-  async findAllDataUserById(userId: string) {
-    const user = isValidObjectId(userId)
-      ? await this.userModel.findById(userId)
-      : null;
+  // Public page: no email, and inactive links stay hidden. Accepts the user id or the @username.
+  async findAllDataUserById(idOrUsername: string) {
+    const handle = idOrUsername.replace(/^@/, '').toLowerCase();
+    const user = isValidObjectId(idOrUsername)
+      ? await this.userModel.findById(idOrUsername)
+      : await this.userModel.findOne({ username: handle });
     if (!user) throw new NotFoundException('Usuário não encontrado');
 
     const links = await this.linkModel
       .find({ userId: user._id, isActivit: true })
       .sort({ order: 1, _id: 1 });
-    const { name, photoURL, template, title, about } = user;
+    const { name, photoURL, template, title, about, username, socials } = user;
 
     return {
       id: String(user._id),
@@ -50,6 +55,8 @@ export class LinksService {
       template,
       title,
       about,
+      username,
+      socials,
       links,
     };
   }
@@ -64,8 +71,11 @@ export class LinksService {
   // Only name and link are editable; the type stays as created.
   async updateLink(userId: string, { id, name, link }: EditLinkDto) {
     const found = await this.findOwnedLink(userId, id);
+    if (link !== undefined && found.type !== 'Cabecalho') {
+      assertValidLink(found.type, link);
+      found.link = link;
+    }
     if (name !== undefined) found.name = name;
-    if (link !== undefined) found.link = link;
 
     return found.save();
   }

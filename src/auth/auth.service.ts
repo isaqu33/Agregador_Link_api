@@ -4,6 +4,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
+import { BadRequestException } from '@nestjs/common';
+import { MailService } from './../mail/mail.service';
 import { UserService } from './../user/user.service';
 import { JwtAuthService } from './../jwt/jwt.service';
 import { RegisterDto } from './dto/register.dto';
@@ -17,6 +20,7 @@ export class AuthService {
   constructor(
     private userService: UserService,
     private jwtAuthService: JwtAuthService,
+    private mail: MailService,
   ) {}
 
   async register({ name, email, password }: RegisterDto) {
@@ -31,6 +35,8 @@ export class AuthService {
         email: normalizedEmail,
         passwordHash: await bcrypt.hash(password, 12),
       });
+
+      await this.sendVerification(user);
 
       return this.issueToken(user);
     } catch (error) {
@@ -66,4 +72,50 @@ export class AuthService {
       user: { id, name: user.name, email: user.email },
     };
   }
+
+  // --- email verification and password recovery ---
+
+  async sendVerification(user: { _id: unknown; name: string; email: string }) {
+    const token = randomBytes(32).toString('hex');
+    await this.userService.setEmailVerifyHash(String(user._id), hashToken(token));
+    await this.mail.sendVerification(user.email, user.name, token);
+  }
+
+  async resendVerification(userId: string) {
+    const user = await this.userService.findById(userId);
+    if (!user) throw new UnauthorizedException();
+    if (!user.emailVerified) await this.sendVerification(user);
+    return { ok: true };
+  }
+
+  async verifyEmail(token: string) {
+    const user = await this.userService.verifyEmailByHash(hashToken(token));
+    if (!user) throw new BadRequestException('Link inválido ou já utilizado');
+    return { ok: true };
+  }
+
+  // Always answers the same, so the endpoint can't be used to discover which emails exist.
+  async forgotPassword(email: string) {
+    const token = randomBytes(32).toString('hex');
+    const user = await this.userService.startPasswordReset(
+      email.trim().toLowerCase(),
+      hashToken(token),
+      60 * 1000,
+    );
+    if (user) await this.mail.sendPasswordReset(user.email, user.name, token);
+    return { ok: true };
+  }
+
+  async resetPassword(token: string, password: string) {
+    const user = await this.userService.finishPasswordReset(
+      hashToken(token),
+      await bcrypt.hash(password, 12),
+    );
+    if (!user) throw new BadRequestException('Link inválido ou expirado');
+    return { ok: true };
+  }
+}
+
+function hashToken(token: string) {
+  return createHash('sha256').update(token).digest('hex');
 }
