@@ -176,4 +176,27 @@ describe('AuthService', () => {
       await expect(service.resendVerification('u1')).rejects.toBeInstanceOf(UnauthorizedException);
     });
   });
+
+  describe('oauthLogin (Google)', () => {
+    it('refuses a provider e-mail that is not verified', async () => {
+      await expect(service.oauthLogin({ email: 'a@b.com', name: 'A', emailVerified: false })).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(users.createNewUser).not.toHaveBeenCalled();
+    });
+
+    it('creates the account (verified, no password) on first login', async () => {
+      users.findOne.mockResolvedValue(null);
+      users.createNewUser.mockResolvedValue({ _id: 'u9', name: 'Ana', email: 'ana@x.com' });
+      const res = await service.oauthLogin({ email: ' Ana@X.com ', name: ' Ana ', emailVerified: true });
+      expect(users.createNewUser).toHaveBeenCalledWith({ name: 'Ana', email: 'ana@x.com', emailVerified: true });
+      expect(res.accessToken).toBe('jwt-token');
+    });
+
+    it('signs in an existing account and confirms its e-mail', async () => {
+      users.findOne.mockResolvedValue({ _id: 'u1', name: 'M', email: 'm@x.com', emailVerified: false });
+      users.markEmailVerified = jest.fn();
+      await service.oauthLogin({ email: 'm@x.com', name: 'M', emailVerified: true });
+      expect(users.createNewUser).not.toHaveBeenCalled();
+      expect(users.markEmailVerified).toHaveBeenCalledWith('u1');
+    });
+  });
 });

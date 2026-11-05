@@ -1,6 +1,8 @@
+import { IntersectionType } from '@nestjs/mapped-types';
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { LinkOptionsDto } from './link-options.dto';
 
-export class EditLinkDto {
+class EditLinkBase {
   @IsString()
   id: string;
 
@@ -16,3 +18,5 @@ export class EditLinkDto {
   @MaxLength(2000)
   link?: string;
 }
+
+export class EditLinkDto extends IntersectionType(EditLinkBase, LinkOptionsDto) {}

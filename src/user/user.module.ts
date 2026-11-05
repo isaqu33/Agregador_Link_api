@@ -4,12 +4,14 @@ import { Link, LinkSchema } from './../links/schemas/link.schema';
 import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { User, UserSchema } from './schemas/user.schema';
+import { Page, PageSchema } from './../pages/schemas/page.schema';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Link.name, schema: LinkSchema },
+      { name: Page.name, schema: PageSchema },
     ]),
   ],
   controllers: [UserController],

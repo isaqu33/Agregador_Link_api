@@ -12,6 +12,8 @@ export const LINK_TYPES = [
   'Tiktok',
   'Telefone',
   'Cabecalho',
+  'Pix',
+  'Newsletter',
 ] as const;
 export type LinkType = typeof LINK_TYPES[number];
 
@@ -44,7 +46,11 @@ export function isHttpUrl(value: string): boolean {
 export function linkError(type: string, link: string): string | null {
   switch (type) {
     case 'Cabecalho':
-      return null; // a header has no destination
+    case 'Newsletter':
+      return null; // a header / e-mail form has no destination
+    case 'Pix':
+      // Pix key or "copia e cola" payload: copied by the visitor, never opened as a URL
+      return /^[^\u0000-\u001f]{1,600}$/.test(link) ? null : 'Chave Pix inválida';
     case 'Email':
       return MAILTO.test(link) ? null : 'Use um e-mail válido (mailto:)';
     case 'Telefone':
@@ -72,3 +78,11 @@ export const RESERVED_USERNAMES = new Set([
 ]);
 
 export const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.]{2,29}$/;
+
+// Types whose `link` is not a URL to open: they have their own behaviour on the page.
+export const NO_URL_TYPES = ['Cabecalho', 'Newsletter'];
+
+export const PIXEL_PATTERNS = {
+  meta: /^\d{5,20}$/,
+  ga: /^G-[A-Z0-9]{4,15}$/,
+};

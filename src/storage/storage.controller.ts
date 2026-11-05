@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
-import { JwtAuthGuard } from 'src/jwt/jwt-auth.guard';
+import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
 import { MAX_IMAGE_BYTES, StorageService } from './storage.service';
 
 @Controller('media')

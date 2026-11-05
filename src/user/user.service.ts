@@ -1,21 +1,23 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-} from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model } from 'mongoose';
 import { Link, LinkDocument } from './../links/schemas/link.schema';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { User, UserDocument } from './schemas/user.schema';
-import { RESERVED_USERNAMES, socialUrlError } from '../common/link-rules';
+import {
+  checkProfileInput,
+  isDuplicateKey,
+  profileChanges,
+} from '../common/profile-rules';
+import { Page, PageDocument } from '../pages/schemas/page.schema';
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Link.name) private linkModel: Model<LinkDocument>,
+    @InjectModel(Page.name) private pageModel: Model<PageDocument>,
   ) {}
 
   // Includes the password hash: for login only, never return this to a client.
@@ -33,10 +35,19 @@ export class UserService {
     const user = await this.userModel.findById(userId);
     if (!user) return null;
 
+    // main page links only; extra pages are listed in `pages` and loaded on demand
     const links = await this.linkModel
-      .find({ userId: user._id })
+      .find({ userId: user._id, pageId: null })
       .sort({ order: 1, _id: 1 });
-    return { ...user.toJSON(), links };
+    const pages = await this.pageModel
+      .find({ userId: user._id })
+      .sort({ _id: 1 })
+      .select('name username');
+    return {
+      ...user.toJSON(),
+      links,
+      pages: pages.map((p) => ({ id: String(p._id), name: p.name, username: p.username })),
+    };
   }
 
   async createNewUser({
@@ -53,36 +64,21 @@ export class UserService {
     });
   }
 
-  async editProfireUser(
-    userId: string,
-    { name, photoURL, template, title, about, username, socials }: UpdateUserDto,
-  ) {
-    if (username !== undefined && RESERVED_USERNAMES.has(username)) {
-      throw new ConflictException('Nome de usuário indisponível');
+  async editProfireUser(userId: string, dto: UpdateUserDto) {
+    checkProfileInput(dto);
+    if (
+      dto.username !== undefined &&
+      (await this.pageModel.exists({ username: dto.username }))
+    ) {
+      throw new ConflictException('Nome de usuário já está em uso');
     }
-    for (const social of socials ?? []) {
-      const error = socialUrlError(social.network, social.url);
-      if (error) throw new BadRequestException(`${social.network}: ${error}`);
-    }
-
-    const changes = Object.fromEntries(
-      Object.entries({
-        name,
-        photoURL,
-        template,
-        title,
-        about,
-        username,
-        socials,
-      }).filter(([, value]) => value !== undefined),
-    );
 
     try {
-      return await this.userModel.findByIdAndUpdate(userId, changes, {
+      return await this.userModel.findByIdAndUpdate(userId, profileChanges(dto), {
         new: true,
       });
     } catch (error) {
-      if ((error as { code?: number }).code === 11000) {
+      if (isDuplicateKey(error)) {
         throw new ConflictException('Nome de usuário já está em uso');
       }
       throw error;
@@ -143,5 +139,9 @@ export class UserService {
 
   async findById(userId: string) {
     return isValidObjectId(userId) ? this.userModel.findById(userId) : null;
+  }
+
+  async markEmailVerified(userId: string) {
+    await this.userModel.updateOne({ _id: userId }, { emailVerified: true });
   }
 }

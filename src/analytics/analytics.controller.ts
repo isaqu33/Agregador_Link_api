@@ -6,12 +6,14 @@ import {
   Post,
   Query,
   Req,
+  Res,
   Sse,
   UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
 import { clientIp } from '../common/app-throttler.guard';
+import { Response } from 'express';
 import { AnalyticsService } from './analytics.service';
 import { TrackClickDto, TrackViewDto } from './dto/track.dto';
 
@@ -25,7 +27,12 @@ export class AnalyticsController {
   @Throttle(60, 60)
   @HttpCode(200)
   view(@Req() req, @Body() dto: TrackViewDto) {
-    return this.analytics.trackView(visitor(req), dto.profile);
+    return this.analytics.trackView(
+      visitor(req),
+      dto.profile,
+      req.headers['user-agent'],
+      dto.referrer,
+    );
   }
 
   @Post('click')
@@ -44,8 +51,26 @@ export class AnalyticsController {
 
   @Get('summary')
   @UseGuards(JwtAuthGuard)
-  summary(@Req() req, @Query('days') days?: string) {
-    const n = Math.min(Math.max(parseInt(days ?? '30', 10) || 30, 1), 90);
-    return this.analytics.summary(req.user.sub, n);
+  summary(@Req() req, @Query('days') days?: string, @Query('pageId') pageId?: string) {
+    return this.analytics.summary(req.user.sub, clampDays(days), pageId);
   }
+
+  @Get('export')
+  @UseGuards(JwtAuthGuard)
+  async export(
+    @Req() req,
+    @Res() res: Response,
+    @Query('days') days?: string,
+    @Query('kind') kind?: string,
+    @Query('pageId') pageId?: string,
+  ) {
+    const k = kind === 'links' ? 'links' : 'daily';
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="analytics-${k}.csv"`);
+    res.send(await this.analytics.exportCsv(req.user.sub, clampDays(days), k, pageId));
+  }
+}
+
+function clampDays(days?: string) {
+  return Math.min(Math.max(parseInt(days ?? '30', 10) || 30, 1), 90);
 }

@@ -5,6 +5,7 @@ export function query<T>(result: T) {
   const q: any = {
     sort: () => q,
     select: () => q,
+    limit: () => q,
     then: (resolve: (v: T) => unknown, reject?: (e: unknown) => unknown) =>
       Promise.resolve(result).then(resolve, reject),
   };

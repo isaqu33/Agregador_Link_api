@@ -9,6 +9,7 @@ describe('AnalyticsService', () => {
   let events: Record<string, jest.Mock>;
   let links: Record<string, jest.Mock>;
   let users: Record<string, jest.Mock>;
+  let pages: Record<string, jest.Mock>;
   let cache: CacheService;
   let service: AnalyticsService;
   let subs: Subscription[];
@@ -23,8 +24,9 @@ describe('AnalyticsService', () => {
     events = { create: jest.fn().mockResolvedValue({}), aggregate: jest.fn() };
     links = { findOne: jest.fn(), find: jest.fn() };
     users = { findById: jest.fn(), findOne: jest.fn() };
+    pages = { findById: jest.fn().mockReturnValue(query(null)), findOne: jest.fn().mockReturnValue(query(null)) };
     cache = new CacheService(configStub());
-    service = new AnalyticsService(events as any, links as any, users as any, cache);
+    service = new AnalyticsService(events as any, links as any, users as any, pages as any, cache);
   });
 
   describe('trackView', () => {
@@ -32,7 +34,7 @@ describe('AnalyticsService', () => {
       users.findOne.mockReturnValue(query({ _id: OID(1) }));
       await expect(service.trackView('1.1.1.1', '@Maria')).resolves.toEqual({ ok: true });
       expect(users.findOne).toHaveBeenCalledWith({ username: 'maria' });
-      expect(events.create).toHaveBeenCalledWith({ userId: OID(1), type: 'view' });
+      expect(events.create).toHaveBeenCalledWith(expect.objectContaining({ userId: OID(1), pageId: null, type: 'view', device: 'desktop', referrer: 'direto' }));
     });
 
     it('records a view of a user found by id', async () => {
@@ -62,7 +64,7 @@ describe('AnalyticsService', () => {
       links.findOne.mockReturnValue(query({ _id: OID(9), userId: OID(1) }));
       await service.trackClick('1.1.1.1', OID(9));
       expect(links.findOne).toHaveBeenCalledWith({ _id: OID(9), isActivit: true });
-      expect(events.create).toHaveBeenCalledWith({ userId: OID(1), type: 'click', linkId: OID(9) });
+      expect(events.create).toHaveBeenCalledWith({ userId: OID(1), pageId: null, type: 'click', linkId: OID(9) });
     });
 
     it('ignores malformed ids, inactive/unknown links and quick repeats', async () => {
@@ -98,7 +100,7 @@ describe('AnalyticsService', () => {
 
     it('reaches a stream opened on ANOTHER instance sharing the same bus', async () => {
       // two services, one shared cache = two API instances behind Redis
-      const other = new AnalyticsService(events as any, links as any, users as any, cache);
+      const other = new AnalyticsService(events as any, links as any, users as any, pages as any, cache);
       users.findOne.mockReturnValue(query({ _id: OID(1) }));
       const seenByOther: any[] = [];
       listen(other, OID(1), seenByOther);
@@ -127,7 +129,9 @@ describe('AnalyticsService', () => {
           { _id: { day: today, type: 'view' }, n: 8 },
           { _id: { day: today, type: 'click' }, n: 2 },
         ])
-        .mockResolvedValueOnce([{ _id: OID(9), n: 2 }]);
+        .mockResolvedValueOnce([{ _id: OID(9), n: 2 }])
+        .mockResolvedValueOnce([{ _id: 'mobile', n: 6 }, { _id: 'desktop', n: 2 }])
+        .mockResolvedValueOnce([{ _id: 'instagram.com', n: 5 }, { _id: 'direto', n: 3 }]);
       links.find.mockReturnValue(query([
         { _id: OID(9), name: 'Site', type: 'Link' },
         { _id: OID(8), name: 'Seção', type: 'Cabecalho' },
@@ -140,6 +144,8 @@ describe('AnalyticsService', () => {
       expect(s.daily[6]).toEqual({ day: today, views: 8, clicks: 2 });
       expect(s.daily.slice(0, 6).every((d) => d.views === 0 && d.clicks === 0)).toBe(true);
       expect([s.views, s.clicks, s.ctr]).toEqual([8, 2, 25]);
+      expect(s.devices).toEqual([{ device: 'mobile', views: 6 }, { device: 'desktop', views: 2 }]);
+      expect(s.referrers).toEqual([{ host: 'instagram.com', views: 5 }, { host: 'direto', views: 3 }]);
       expect(s.links).toEqual([
         { id: OID(9), name: 'Site', clicks: 2 },
         { id: OID(7), name: 'Zap', clicks: 0 }, // headers are not listed; sorted by clicks
@@ -162,6 +168,62 @@ describe('AnalyticsService', () => {
         expect(String(pipeline[0].$match.userId)).toBe(OID(1));
       }
       expect(String(links.find.mock.calls[0][0].userId)).toBe(OID(1));
+    });
+  });
+
+  describe('device, referrer and extra pages', () => {
+    it('stores the device class and the referrer host of a view', async () => {
+      users.findOne.mockReturnValue(query({ _id: OID(1) }));
+      await service.trackView(
+        '1.1.1.1',
+        'maria',
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148',
+        'https://www.Instagram.com/maria?utm=1',
+      );
+      expect(events.create).toHaveBeenCalledWith(
+        expect.objectContaining({ device: 'mobile', referrer: 'instagram.com' }),
+      );
+    });
+
+    it('attributes a view of an extra page to its owner and to the page', async () => {
+      users.findOne.mockReturnValue(query(null));
+      pages.findOne.mockReturnValue(query({ _id: OID(7), userId: OID(1) }));
+      await service.trackView('1.1.1.1', '@loja');
+      expect(events.create).toHaveBeenCalledWith(expect.objectContaining({ userId: OID(1), pageId: OID(7) }));
+    });
+
+    it('a click on a link of an extra page carries the page id', async () => {
+      links.findOne.mockReturnValue(query({ _id: OID(9), userId: OID(1), pageId: OID(7) }));
+      await service.trackClick('1.1.1.1', OID(9));
+      expect(events.create).toHaveBeenCalledWith({ userId: OID(1), pageId: OID(7), type: 'click', linkId: OID(9) });
+    });
+
+    it('summary of an extra page filters every query by that page', async () => {
+      events.aggregate.mockResolvedValue([]);
+      links.find.mockReturnValue(query([]));
+      await service.summary(OID(1), 7, OID(7));
+      for (const [pipeline] of events.aggregate.mock.calls) {
+        expect(String(pipeline[0].$match.pageId)).toBe(OID(7));
+      }
+      expect(String(links.find.mock.calls[0][0].pageId)).toBe(OID(7));
+    });
+
+    it('summary of the main page filters pageId = null', async () => {
+      events.aggregate.mockResolvedValue([]);
+      links.find.mockReturnValue(query([]));
+      await service.summary(OID(1), 7);
+      expect(events.aggregate.mock.calls[0][0][0].$match.pageId).toBeNull();
+    });
+
+    it('exports CSV with ; separator, BOM and CRLF', async () => {
+      events.aggregate.mockResolvedValue([]);
+      links.find.mockReturnValue(query([{ _id: OID(9), name: '=HYPERLINK("x")', type: 'Link' }]));
+      const csv = await service.exportCsv(OID(1), 7, 'links');
+      expect(csv.startsWith('\ufefflink;cliques\r\n')).toBe(true);
+      expect(csv).toContain("'=HYPERLINK"); // formula injection neutralised
+      const daily = await service.exportCsv(OID(1), 3, 'daily');
+      expect(daily.split('\r\n')[0]).toBe('\ufeffdia;visitas;cliques');
+      expect(daily.trim().split('\r\n')).toHaveLength(4);
     });
   });
 });

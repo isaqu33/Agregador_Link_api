@@ -1,4 +1,7 @@
-import { Body, Controller, HttpCode, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, NotFoundException, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHash, timingSafeEqual } from 'crypto';
+import { OAuthLoginDto } from './dto/oauth.dto';
 import { JwtAuthGuard } from './../jwt/jwt-auth.guard';
 import { ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/tokens.dto';
 import { Throttle } from '@nestjs/throttler';
@@ -8,7 +11,10 @@ import { RegisterDto } from './dto/register.dto';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private config: ConfigService,
+  ) {}
 
   @Post('register')
   @Throttle(5, 60)
@@ -50,5 +56,19 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   resend(@Req() req) {
     return this.authService.resendVerification(req.user.sub);
+  }
+
+  // Server-to-server: the Next server calls this after Google login. Protected by a shared secret.
+  @Post('oauth')
+  @HttpCode(200)
+  @Throttle(30, 60)
+  oauth(@Headers('x-oauth-secret') secret: string | undefined, @Body() dto: OAuthLoginDto) {
+    const expected = this.config.get<string>('OAUTH_SHARED_SECRET');
+    if (!expected) throw new NotFoundException(); // feature off
+    const digest = (v: string) => createHash('sha256').update(v).digest();
+    if (!secret || !timingSafeEqual(digest(secret), digest(expected))) {
+      throw new UnauthorizedException();
+    }
+    return this.authService.oauthLogin(dto);
   }
 }

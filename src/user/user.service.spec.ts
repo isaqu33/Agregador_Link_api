@@ -3,11 +3,13 @@ import { UserService } from './user.service';
 
 describe('UserService.editProfireUser', () => {
   let users: Record<string, jest.Mock>;
+  let pages: Record<string, jest.Mock>;
   let service: UserService;
 
   beforeEach(() => {
     users = { findByIdAndUpdate: jest.fn().mockResolvedValue({}) };
-    service = new UserService(users as any, {} as any);
+    pages = { exists: jest.fn().mockResolvedValue(null) };
+    service = new UserService(users as any, {} as any, pages as any);
   });
 
   it('only sends the fields that were provided', async () => {
@@ -18,6 +20,17 @@ describe('UserService.editProfireUser', () => {
   it.each(['login', 'costumer', 'api', 'u', 'admin'])('refuses the reserved username %s (409)', async (username) => {
     await expect(service.editProfireUser('u1', { username })).rejects.toBeInstanceOf(ConflictException);
     expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses a username already used by an extra page (409)', async () => {
+    pages.exists.mockResolvedValue({ _id: 'p1' });
+    await expect(service.editProfireUser('u1', { username: 'loja' })).rejects.toBeInstanceOf(ConflictException);
+    expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('stores pixels without empty ids', async () => {
+    await service.editProfireUser('u1', { pixels: { meta: '123456', ga: '' } });
+    expect(users.findByIdAndUpdate).toHaveBeenCalledWith('u1', { pixels: { meta: '123456' } }, { new: true });
   });
 
   it('turns a duplicate username (unique index) into 409', async () => {

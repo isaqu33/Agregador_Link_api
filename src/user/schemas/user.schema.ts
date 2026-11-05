@@ -37,6 +37,10 @@ export class User {
   })
   socials: { network: string; url: string }[];
 
+  // Tracking pixels injected in the public page (ids only, validated)
+  @Prop({ type: { _id: false, meta: String, ga: String }, default: {} })
+  pixels: { meta?: string; ga?: string };
+
   @Prop({ default: false })
   emailVerified: boolean;
 
