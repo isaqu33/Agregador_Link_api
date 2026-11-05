@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Link, LinkSchema } from '../links/schemas/link.schema';
 import { User, UserSchema } from '../user/schemas/user.schema';
+import { Page, PageSchema } from '../pages/schemas/page.schema';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { Event, EventSchema } from './schemas/event.schema';
@@ -12,6 +13,7 @@ import { Event, EventSchema } from './schemas/event.schema';
       { name: Event.name, schema: EventSchema },
       { name: Link.name, schema: LinkSchema },
       { name: User.name, schema: UserSchema },
+      { name: Page.name, schema: PageSchema },
     ]),
   ],
   controllers: [AnalyticsController],

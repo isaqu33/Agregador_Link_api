@@ -13,7 +13,10 @@ import { DeleteLinkDto } from './dto/delete-link.dto';
 import { EditActiveDto } from './dto/edit-active.dto';
 import { EditLinkDto } from './dto/edit-link.dto';
 import { ReorderLinksDto } from './dto/reorder-links.dto';
-import { JwtAuthGuard } from 'src/jwt/jwt-auth.guard';
+import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
+import { UnlockLinkDto } from './dto/unlock-link.dto';
+import { HttpCode } from '@nestjs/common';
 
 @Controller('links')
 export class LinksController {
@@ -56,5 +59,13 @@ export class LinksController {
       data.id,
       data.activation,
     );
+  }
+
+  // Public: reveals the destination of a password-protected link
+  @Post('unlock')
+  @HttpCode(200)
+  @Throttle(10, 60)
+  unlock(@Body() data: UnlockLinkDto) {
+    return this.linksService.unlock(data.linkId, data.password);
   }
 }

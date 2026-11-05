@@ -21,6 +21,20 @@ export class SocialDto {
   url: string;
 }
 
+export class PixelsDto {
+  // Meta Pixel id (digits); empty string removes it
+  @IsOptional()
+  @IsString()
+  @Matches(/^(\d{5,20})?$/, { message: 'Meta Pixel: apenas números (5 a 20 dígitos)' })
+  meta?: string;
+
+  // Google Analytics 4 measurement id (G-XXXXXXX); empty string removes it
+  @IsOptional()
+  @IsString()
+  @Matches(/^(G-[A-Z0-9]{4,15})?$/, { message: 'Google Analytics: use o formato G-XXXXXXXXXX' })
+  ga?: string;
+}
+
 export class UpdateUserDto {
   @IsOptional()
   @IsString()
@@ -64,4 +78,9 @@ export class UpdateUserDto {
   @ValidateNested({ each: true })
   @Type(() => SocialDto)
   socials?: SocialDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PixelsDto)
+  pixels?: PixelsDto;
 }

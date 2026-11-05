@@ -1,5 +1,7 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { query } from '../test-utils';
+import * as bcrypt from 'bcryptjs';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { CacheService } from '../cache/cache.service';
+import { configStub, query } from '../test-utils';
 import { LinksService } from './links.service';
 
 const OID = (n: number) => n.toString(16).padStart(24, '0'); // valid ObjectId strings
@@ -7,6 +9,8 @@ const OID = (n: number) => n.toString(16).padStart(24, '0'); // valid ObjectId s
 describe('LinksService', () => {
   let linkModel: Record<string, jest.Mock>;
   let userModel: Record<string, jest.Mock>;
+  let pageModel: Record<string, jest.Mock>;
+  let cache: CacheService;
   let service: LinksService;
 
   beforeEach(() => {
@@ -18,7 +22,9 @@ describe('LinksService', () => {
       bulkWrite: jest.fn().mockResolvedValue({}),
     };
     userModel = { findById: jest.fn(), findOne: jest.fn() };
-    service = new LinksService(linkModel as any, userModel as any);
+    pageModel = { exists: jest.fn(), findById: jest.fn().mockResolvedValue(null), findOne: jest.fn().mockResolvedValue(null) };
+    cache = new CacheService(configStub());
+    service = new LinksService(linkModel as any, userModel as any, pageModel as any, cache);
   });
 
   describe('createlink', () => {
@@ -183,12 +189,171 @@ describe('LinksService', () => {
       userModel.findOne.mockResolvedValue(user);
       linkModel.find.mockReturnValue(query([]));
       await service.findAllDataUserById('maria');
-      expect(linkModel.find).toHaveBeenCalledWith({ userId: OID(5), isActivit: true });
+      expect(linkModel.find).toHaveBeenCalledWith(expect.objectContaining({ userId: OID(5), pageId: null, isActivit: true }));
     });
 
     it('404 for an unknown user', async () => {
       userModel.findOne.mockResolvedValue(null);
       await expect(service.findAllDataUserById('ninguem')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('extras: thumbnail, featured, schedule, embed, password', () => {
+    const first = () => linkModel.findOne.mockReturnValue(query(null));
+
+    it('accepts a thumbnail that is an image of the owner or a bundled asset', async () => {
+      first();
+      await expect(service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', thumbnail: `/media/${OID(1)}/a.png`, featured: true })).resolves.toMatchObject({ thumbnail: `/media/${OID(1)}/a.png`, featured: true });
+      await expect(service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', thumbnail: '/assets/avatars/avatar-01.svg' })).resolves.toBeTruthy();
+    });
+
+    it("rejects a thumbnail from someone else's folder or an external URL (400)", async () => {
+      first();
+      await expect(service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', thumbnail: `/media/${OID(2)}/a.png` })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', thumbnail: 'https://evil.com/x.png' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('stores the schedule and refuses an end before the start', async () => {
+      first();
+      const ok: any = await service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', startAt: '2030-01-01T00:00:00Z', endAt: '2030-02-01T00:00:00Z' });
+      expect(ok.startAt).toEqual(new Date('2030-01-01T00:00:00Z'));
+      await expect(service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', startAt: '2030-02-01T00:00:00Z', endAt: '2030-01-01T00:00:00Z' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('embed needs a YouTube/Spotify link that has a player', async () => {
+      first();
+      await expect(service.createlink(OID(1), { name: 'V', link: 'https://youtu.be/dQw4w9WgXcQ', type: 'Youtube', embed: true })).resolves.toMatchObject({ embed: true });
+      await expect(service.createlink(OID(1), { name: 'V', link: 'https://youtube.com/@canal', type: 'Youtube', embed: true })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.createlink(OID(1), { name: 'V', link: 'https://a.com', type: 'Link', embed: true })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('hashes the password (never stored in clear) and marks the link locked', async () => {
+      first();
+      const created: any = await service.createlink(OID(1), { name: 'VIP', link: 'https://a.com/vip', type: 'Link', password: 'segredo-1' });
+      expect(created.locked).toBe(true);
+      expect(created.passwordHash).not.toBe('segredo-1');
+      expect(await bcrypt.compare('segredo-1', created.passwordHash)).toBe(true);
+    });
+
+    it('a header cannot have a password', async () => {
+      first();
+      await expect(service.createlink(OID(1), { name: 'Seção', type: 'Cabecalho', password: 'segredo-1' })).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('an e-mail form and a Pix key are valid link types', async () => {
+      first();
+      await expect(service.createlink(OID(1), { name: 'Newsletter', type: 'Newsletter' })).resolves.toMatchObject({ link: '' });
+      await expect(service.createlink(OID(1), { name: 'Pix', link: 'maria@x.com', type: 'Pix' })).resolves.toMatchObject({ link: 'maria@x.com' });
+    });
+
+    it('editing: sets, changes and clears the extras; removePassword unlocks', async () => {
+      const doc: any = { name: 'N', link: 'https://a.com', type: 'Link', embed: false, locked: true, passwordHash: 'h', startAt: null, endAt: null, save: jest.fn().mockImplementation(async function (this: any) { return this; }) };
+      linkModel.findOne.mockResolvedValue(doc);
+      await service.updateLink(OID(1), { id: OID(2), featured: true, thumbnail: null, startAt: '2030-01-01T00:00:00Z', removePassword: true });
+      expect(doc).toMatchObject({ featured: true, thumbnail: null, locked: false });
+      expect(doc.passwordHash).toBeUndefined();
+      expect(doc.startAt).toEqual(new Date('2030-01-01T00:00:00Z'));
+    });
+
+    it('editing: the new end must come after the stored start', async () => {
+      const doc: any = { name: 'N', link: 'https://a.com', type: 'Link', startAt: new Date('2030-03-01'), endAt: null, save: jest.fn() };
+      linkModel.findOne.mockResolvedValue(doc);
+      await expect(service.updateLink(OID(1), { id: OID(2), endAt: '2030-01-01T00:00:00Z' })).rejects.toBeInstanceOf(BadRequestException);
+      expect(doc.save).not.toHaveBeenCalled();
+    });
+
+    it('editing the URL of an embedded link to one without player turns the embed off', async () => {
+      const doc: any = { name: 'N', link: 'https://youtu.be/dQw4w9WgXcQ', type: 'Youtube', embed: true, save: jest.fn().mockImplementation(async function (this: any) { return this; }) };
+      linkModel.findOne.mockResolvedValue(doc);
+      await service.updateLink(OID(1), { id: OID(2), link: 'https://youtube.com/@canal' });
+      expect(doc.embed).toBe(false);
+    });
+  });
+
+  describe('extra pages', () => {
+    it('creates a link on an extra page only if the page belongs to the user', async () => {
+      linkModel.findOne.mockReturnValue(query(null));
+      pageModel.exists.mockResolvedValue(null);
+      await expect(service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', pageId: OID(7) })).rejects.toBeInstanceOf(NotFoundException);
+
+      pageModel.exists.mockResolvedValue({ _id: OID(7) });
+      const created: any = await service.createlink(OID(1), { name: 'X', link: 'https://a.com', type: 'Link', pageId: OID(7) });
+      expect(String(created.pageId)).toBe(OID(7));
+      expect(linkModel.findOne).toHaveBeenLastCalledWith({ userId: OID(1), pageId: expect.anything() }); // order is per page
+    });
+
+    it('public: an @username that is not a user resolves to an extra page and lists only its links', async () => {
+      userModel.findOne.mockResolvedValue(null);
+      pageModel.findOne.mockResolvedValue({ _id: OID(7), userId: OID(1), name: 'Loja', username: 'loja', socials: [], pixels: { meta: '123456' } });
+      linkModel.find.mockReturnValue(query([]));
+      const page: any = await service.findAllDataUserById('@loja');
+      expect(page).toMatchObject({ id: OID(7), username: 'loja', pixels: { meta: '123456' } });
+      const q = linkModel.find.mock.calls[0][0];
+      expect(q.userId).toBe(OID(1));
+      expect(String(q.pageId)).toBe(OID(7));
+    });
+  });
+
+  describe('public page: schedule and protected links', () => {
+    const owner = { _id: OID(5), name: 'M', username: 'm', socials: [], pixels: {} };
+
+    it('asks only for links inside their schedule window', async () => {
+      userModel.findOne.mockResolvedValue(owner);
+      linkModel.find.mockReturnValue(query([]));
+      await service.findAllDataUserById('m');
+      const q = linkModel.find.mock.calls[0][0];
+      expect(q.isActivit).toBe(true);
+      expect(q.$and).toHaveLength(2);
+      expect(q.$and[0].$or).toEqual(expect.arrayContaining([{ startAt: null }, { startAt: { $lte: expect.any(Date) } }]));
+      expect(q.$and[1].$or).toEqual(expect.arrayContaining([{ endAt: null }, { endAt: { $gt: expect.any(Date) } }]));
+    });
+
+    it('never sends the destination or the hash of a protected link', async () => {
+      userModel.findOne.mockResolvedValue(owner);
+      linkModel.find.mockReturnValue(query([
+        { toJSON: () => ({ id: 'l1', name: 'VIP', link: 'https://segredo.com', type: 'Link', locked: true, passwordHash: 'h', userId: OID(5), embed: false }) },
+        { toJSON: () => ({ id: 'l2', name: 'Aberto', link: 'https://aberto.com', type: 'Link', locked: false, userId: OID(5), embed: false }) },
+      ]));
+      const page: any = await service.findAllDataUserById('m');
+      const json = JSON.stringify(page);
+      expect(json).not.toContain('segredo.com');
+      expect(json).not.toContain('passwordHash');
+      expect(page.links[0]).toMatchObject({ locked: true, link: '' });
+      expect(page.links[1].link).toBe('https://aberto.com');
+    });
+
+    it('adds the player URL of embedded links (and hides it when locked)', async () => {
+      userModel.findOne.mockResolvedValue(owner);
+      linkModel.find.mockReturnValue(query([
+        { toJSON: () => ({ id: 'a', name: 'V', link: 'https://youtu.be/dQw4w9WgXcQ', type: 'Youtube', embed: true, locked: false }) },
+        { toJSON: () => ({ id: 'b', name: 'S', link: 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC', type: 'Spotify', embed: true, locked: true }) },
+      ]));
+      const page: any = await service.findAllDataUserById('m');
+      expect(page.links[0].embedUrl).toBe('https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+      expect(page.links[1].embedUrl).toBeNull();
+    });
+  });
+
+  describe('unlock', () => {
+    const lockedLink = async () => ({ link: 'https://segredo.com', passwordHash: await bcrypt.hash('certa-123', 4) });
+
+    it('reveals the destination for the right password', async () => {
+      linkModel.findOne.mockReturnValue(query(await lockedLink()));
+      await expect(service.unlock(OID(9), 'certa-123')).resolves.toEqual({ link: 'https://segredo.com' });
+    });
+
+    it('401 for a wrong password, unknown link or a link that is not locked', async () => {
+      linkModel.findOne.mockReturnValue(query(await lockedLink()));
+      await expect(service.unlock(OID(9), 'errada')).rejects.toBeInstanceOf(UnauthorizedException);
+      linkModel.findOne.mockReturnValue(query(null));
+      await expect(service.unlock(OID(9), 'qualquer')).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('blocks a link after 5 wrong tries (429), even with the right password', async () => {
+      linkModel.findOne.mockReturnValue(query(await lockedLink()));
+      for (let i = 0; i < 5; i++) await service.unlock(OID(9), 'errada').catch(() => undefined);
+      const blocked: any = await service.unlock(OID(9), 'certa-123').catch((e) => e);
+      expect(blocked.getStatus()).toBe(429);
     });
   });
 });

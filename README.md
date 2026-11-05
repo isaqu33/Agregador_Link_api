@@ -1,7 +1,8 @@
 # FaceLink — API
 
-API do agregador de links (estilo Linktree): contas, perfil público por `@usuario`, links de 10 tipos, upload de
-imagens, analytics com **tempo real (SSE)**, confirmação de e-mail e recuperação de senha.
+API do agregador de links (estilo Linktree): contas, perfil público por `@usuario`, **várias páginas por conta**, links de
+12 tipos (com miniatura, destaque, agendamento, player e senha), captura de e-mail, upload de imagens, analytics com
+**tempo real (SSE)**, exportação CSV, confirmação de e-mail, recuperação de senha e login com Google.
 
 Este repositório é o **backend** (NestJS). O front fica em
 [Agregador_Link_Front](https://github.com/isaqu33/Agregador_Link_Front) (veja lá as capturas de tela do produto).
@@ -16,8 +17,8 @@ flowchart LR
   F[Front Next.js<br/>proxy /api/backend] -- "Bearer JWT · x-forwarded-for" --> API
   subgraph API [NestJS]
     direction TB
-    AUTH[auth] --- USER[user] --- LINKS[links]
-    AN[analytics] --- MAIL[mail] --- ST[storage]
+    AUTH[auth] --- USER[user] --- LINKS[links] --- PG[pages]
+    AN[analytics] --- LD[leads] --- MAIL[mail] --- ST[storage]
     CACHE[cache]
   end
   API --> M[(MongoDB)]
@@ -31,8 +32,10 @@ flowchart LR
 | `auth` | cadastro, login, confirmação de e-mail, recuperação de senha (tokens de uso único) |
 | `jwt` | emissão e validação do JWT (estratégia passport, só `Authorization: Bearer`) |
 | `user` | perfil, `username` único, redes sociais, template de aparência |
-| `links` | CRUD, ordenação, página pública (por id ou `@username`) |
-| `analytics` | registro de visitas/cliques, resumo por período e **stream SSE** |
+| `links` | CRUD, ordenação, extras (miniatura, destaque, agendamento, player, senha), `unlock`, página pública |
+| `pages` | páginas extras da conta (a principal é o próprio usuário) |
+| `leads` | e-mails coletados pelos formulários públicos; lista, remoção e CSV |
+| `analytics` | visitas/cliques (dispositivo, origem), resumo por período, **stream SSE** e exportação CSV |
 | `cache` | contadores com expiração e pub/sub: **Redis** (`REDIS_URL`) ou memória |
 | `mail` | e-mails (nodemailer); sem SMTP, imprime o e-mail no log |
 | `storage` | upload e leitura de imagens no Azure Blob |
@@ -50,20 +53,27 @@ flowchart LR
 | `POST /auth/resend-verification` | JWT | reenvia a confirmação |
 | `GET /user/me` | JWT | perfil + links (sem senha nem tokens) |
 | `POST /user/editProfile` | JWT | `name, photoURL, template, title, about, username, socials` |
-| `POST /links/addLink` | JWT | `{name, link?, type}`; validação por tipo |
+| `POST /links/addLink` | JWT | `{name, link?, type, pageId?}` + extras (`thumbnail, featured, startAt, endAt, embed, password`); validação por tipo |
+| `POST /links/unlock` | — | `{linkId, password}` → destino de um link com senha |
 | `POST /links/editLink` | JWT | `{id, name?, link?}`; só do dono |
 | `POST /links/deletLink` | JWT | `{idlink}` |
 | `POST /links/editActivet` | JWT | `{id, activation}` |
 | `POST /links/reorder` | JWT | `{ids:[...]}` na nova ordem |
-| `GET /links/getDataUser/:id` | — | página pública; `:id` é o id **ou** o `@username` |
-| `POST /analytics/view` · `/click` | — | registra visita / clique (sempre 200) |
+| `GET /links/getDataUser/:id` | — | página pública (usuário ou página extra); `:id` é o id **ou** o `@username`; só links ativos e dentro do agendamento; links com senha vêm sem destino |
+| `POST /pages/create` · `/edit` · `/delete` · `GET /pages/:id` | JWT | páginas extras (máx. 5) |
+| `POST /leads` | — | e-mail do formulário público (sempre 200; honeypot e limite) |
+| `GET /leads` · `/leads/export` · `POST /leads/delete` | JWT | contatos: lista, CSV, remoção |
+| `POST /auth/oauth` | segredo | servidor → servidor: login com Google |
+| `POST /analytics/view` · `/click` | — | registra visita (com dispositivo e origem) / clique (sempre 200) |
+| `GET /analytics/export` | JWT | CSV por dia ou por link |
 | `GET /analytics/summary?days=30` | JWT | totais, taxa, série por dia, cliques por link |
 | `GET /analytics/stream` | JWT | **SSE** com os eventos `view` e `click` da página do usuário |
 | `POST /media` · `GET /media/:userId/:file` | JWT / — | upload (JPEG/PNG/WebP/GIF até 5 MB) e leitura |
 
 Tipos de link aceitos (`type`): `Link, Spotify, Youtube, Whatsapp, Twitch, Email, Instagram, Tiktok, Telefone,
-Cabecalho`. O `link` é validado **pelo tipo**: `http(s)` (padrão), `mailto:` (Email), `tel:+…` (Telefone), vazio
-(Cabecalho). `javascript:` e `data:` nunca passam.
+Cabecalho, Pix, Newsletter`. O `link` é validado **pelo tipo**: `http(s)` (padrão), `mailto:` (Email), `tel:+…` (Telefone),
+chave Pix (Pix), vazio (Cabecalho, Newsletter). `javascript:` e `data:` nunca passam. A miniatura só pode ser uma imagem
+do próprio dono (`/media/<id>/…`) ou um asset do projeto; o player só é gerado para YouTube/Spotify reais.
 
 > `deletLink`, `editActivet` e `isActivit` têm erro de digitação histórico, mas são contrato com o front.
 
@@ -78,6 +88,10 @@ Cabecalho`. O `link` é validado **pelo tipo**: `http(s)` (padrão), `mailto:` (
   um hash falso para custar o mesmo tempo); `forgot-password` sempre responde 200.
 - **Senhas** com bcrypt (custo 12), `select:false` no schema. **Tokens** de e-mail e de redefinição de senha são
   aleatórios (32 bytes) e só o **hash SHA-256** fica no banco; uso único e com validade.
+- **Link com senha:** o hash (bcrypt) nunca é serializado e o destino não vai na página pública; `unlock` bloqueia o link após 5 erros em 15 min e limita 10/min por IP.
+- **Formulário de e-mail:** campo-armadilha (honeypot), 5/min por IP, resposta sempre 200 (não revela formulários), um e-mail conta uma vez por formulário.
+- **Exportações CSV:** células que começam com `= + - @` são neutralizadas (injeção de fórmula em planilhas).
+- **Login com Google:** a API só aceita `POST /auth/oauth` com um segredo compartilhado (comparação em tempo constante), recusa e-mail não verificado e fica desligada (404) sem o segredo.
 - **Dono de cada recurso:** link de outro usuário responde 404 (não 403), então os ids não podem ser sondados.
 - **Validação rígida** (`whitelist` + `forbidNonWhitelisted`): campo extra no corpo vira 400.
 - **Nomes de usuário** reservados (`login`, `costumer`, `api`, `u`…) para não colidirem com rotas do front.
@@ -107,6 +121,7 @@ em 3 s conta uma vez) e os contadores de rate limit também são compartilhados.
 
 ## Modelo de dados (MongoDB, banco `agregador`)
 
+- **Page** (página extra) e **Lead** (e-mail coletado); o **Link** ganhou `thumbnail, featured, startAt, endAt, embed, locked, passwordHash, pageId`.
 - **User:** `name`, `email` (único), `password` (hash), `photoURL`, `template` (JSON: cor, formato, fonte, botão),
   `title`, `about`, `username` (único, opcional), `socials[{network,url}]`, `emailVerified`, hashes de token.
 - **Link:** `name`, `link`, `type`, `order`, `isActivit`, `userId`.
@@ -141,13 +156,14 @@ Suba a API **antes** do front: ela cria a rede `agregador-network` que o front u
 | `REDIS_URL` | opcional; estado compartilhado entre instâncias |
 | `APP_URL` | base dos links dos e-mails (URL do front) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | envio de e-mail; **sem `SMTP_HOST` o e-mail vai para o log** |
+| `OAUTH_SHARED_SECRET` | login com Google (igual ao do front); vazio = desligado |
 | `SEED_USER_*` | usuário criado por `npm run seed` (já nasce com e-mail confirmado) |
 | `API_PORT_HOST`, `MONGO_PORT_HOST`, `AZURITE_BLOB_PORT_HOST` | portas no host |
 
 ## Testes
 
 ```bash
-npm test            # 89 testes em 8 suítes, sem precisar de banco
+npm test            # 165 testes em 12 suítes, sem precisar de banco
 npx tsc --noEmit
 ```
 
@@ -158,7 +174,8 @@ npx tsc --noEmit
 | `user.service` | usernames reservados e duplicados (409), validação das redes sociais |
 | `analytics.service` | contagem, anti-duplicidade, série por dia, isolamento por usuário, **entrega entre duas instâncias** |
 | `cache.service` | contadores com expiração, pub/sub |
-| `link-rules` | regras de URL, username e redes |
+| `link-rules` · `helpers` | regras de URL/username/redes, player (YouTube/Spotify), CSV, dispositivo e origem |
+| `leads.service` · `pages.service` · `link.schema` | captura sem duplicar/honeypot, escopo por página e dono, o hash nunca é serializado |
 | `http-security` | controller + guard + validação reais: Helmet, 429 com `Retry-After`, limite por IP/rota, 400 de validação |
 
 Os models do Mongoose são simulados (`src/test-utils.ts`). Foi verificado que os testes falham quando as regras são

@@ -10,6 +10,8 @@ import { LinksModule } from './links/links.module';
 import { StorageModule } from './storage/storage.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { MailModule } from './mail/mail.module';
+import { PagesModule } from './pages/pages.module';
+import { LeadsModule } from './leads/leads.module';
 import { CacheModule } from './cache/cache.module';
 import { CacheService } from './cache/cache.service';
 import { RedisThrottlerStorage } from './cache/redis-throttler.storage';
@@ -44,6 +46,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
     LinksModule,
     StorageModule,
     AnalyticsModule,
+    PagesModule,
+    LeadsModule,
     MailModule,
   ],
   controllers: [AppController],

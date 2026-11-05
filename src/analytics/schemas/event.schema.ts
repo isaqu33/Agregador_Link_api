@@ -13,6 +13,18 @@ export class Event {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Link' })
   linkId?: Types.ObjectId;
 
+  // extra page the event belongs to (null = main page)
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Page', default: null })
+  pageId?: Types.ObjectId | null;
+
+  // views only: how the visitor arrived
+  @Prop({ type: String, enum: ['mobile', 'tablet', 'desktop'] })
+  device?: 'mobile' | 'tablet' | 'desktop';
+
+  // host of the page that linked here ("direto" when none)
+  @Prop({ type: String, maxlength: 100 })
+  referrer?: string;
+
   createdAt: Date;
 }
 

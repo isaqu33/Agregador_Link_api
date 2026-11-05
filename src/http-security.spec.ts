@@ -4,7 +4,12 @@ import { Test } from '@nestjs/testing';
 import { ThrottlerModule } from '@nestjs/throttler';
 import helmet from 'helmet';
 import * as request from 'supertest';
+import { ConfigService } from '@nestjs/config';
 import { AuthController } from './auth/auth.controller';
+import { LeadsController } from './leads/leads.controller';
+import { LeadsService } from './leads/leads.service';
+import { LinksController } from './links/links.controller';
+import { LinksService } from './links/links.service';
 import { AuthService } from './auth/auth.service';
 import { AppThrottlerGuard } from './common/app-throttler.guard';
 
@@ -17,14 +22,24 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
     forgotPassword: jest.fn().mockResolvedValue({ ok: true }),
     resetPassword: jest.fn().mockResolvedValue({ ok: true }),
     verifyEmail: jest.fn().mockResolvedValue({ ok: true }),
+    oauthLogin: jest.fn().mockResolvedValue({ accessToken: 't' }),
   };
+  const leads = { capture: jest.fn().mockResolvedValue({ ok: true }) };
+  const links = { unlock: jest.fn().mockResolvedValue({ link: 'https://x.com' }) };
+  let oauthSecret: string | undefined = 'segredo-compartilhado';
 
   beforeEach(async () => {
     Object.values(auth).forEach((f) => f.mockClear());
     const moduleRef = await Test.createTestingModule({
       imports: [ThrottlerModule.forRoot({ ttl: 60, limit: 120 })],
-      controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: auth }, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
+      controllers: [AuthController, LeadsController, LinksController],
+      providers: [
+        { provide: AuthService, useValue: auth },
+        { provide: LeadsService, useValue: leads },
+        { provide: LinksService, useValue: links },
+        { provide: ConfigService, useValue: { get: (k: string) => (k === 'OAUTH_SHARED_SECRET' ? oauthSecret : undefined) } },
+        { provide: APP_GUARD, useClass: AppThrottlerGuard },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -94,5 +109,48 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
     const res = await request(app.getHttpServer()).post('/auth/reset-password').set('x-forwarded-for', '6.6.6.6').send({ token: 'x'.repeat(40), password: '123' });
     expect(res.status).toBe(400);
     expect(auth.resetPassword).not.toHaveBeenCalled();
+  });
+
+  describe('public endpoints added for pages, leads and protected links', () => {
+    const lead = (ip: string, body: object = { linkId: '507f1f77bcf86cd799439011', email: 'a@b.com' }) =>
+      request(app.getHttpServer()).post('/leads').set('x-forwarded-for', ip).send(body);
+
+    it('e-mail capture: 5 per minute per IP, bad e-mail is 400', async () => {
+      for (let i = 0; i < 5; i++) expect((await lead('11.1.1.1')).status).toBe(200);
+      expect((await lead('11.1.1.1')).status).toBe(429);
+      expect((await lead('11.1.1.2', { linkId: '507f1f77bcf86cd799439011', email: 'nope' })).status).toBe(400);
+      expect((await lead('11.1.1.3', { linkId: 'not-an-id', email: 'a@b.com' })).status).toBe(400);
+    });
+
+    it('unlock: 10 per minute per IP and the body is validated', async () => {
+      const unlock = (ip: string, body: object = { linkId: '507f1f77bcf86cd799439011', password: 'x' }) =>
+        request(app.getHttpServer()).post('/links/unlock').set('x-forwarded-for', ip).send(body);
+      for (let i = 0; i < 10; i++) expect((await unlock('12.1.1.1')).status).toBe(200);
+      expect((await unlock('12.1.1.1')).status).toBe(429);
+      expect((await unlock('12.1.1.2', { linkId: 'x', password: 'x' })).status).toBe(400);
+    });
+
+    const oauth = (secret?: string) => {
+      const req = request(app.getHttpServer()).post('/auth/oauth').set('x-forwarded-for', '13.1.1.1');
+      if (secret) req.set('x-oauth-secret', secret);
+      return req.send({ provider: 'google', email: 'a@b.com', name: 'A', emailVerified: true });
+    };
+
+    it('oauth endpoint: only with the shared secret', async () => {
+      expect((await oauth()).status).toBe(401);
+      expect((await oauth('errado')).status).toBe(401);
+      expect(auth.oauthLogin).not.toHaveBeenCalled();
+      expect((await oauth('segredo-compartilhado')).status).toBe(200);
+      expect(auth.oauthLogin).toHaveBeenCalledTimes(1);
+    });
+
+    it('oauth endpoint: disabled (404) when no secret is configured; unknown provider is 400', async () => {
+      oauthSecret = undefined;
+      expect((await oauth('qualquer')).status).toBe(404);
+      oauthSecret = 'segredo-compartilhado';
+      const res = await request(app.getHttpServer()).post('/auth/oauth').set('x-oauth-secret', oauthSecret).set('x-forwarded-for', '13.1.1.2')
+        .send({ provider: 'facebook', email: 'a@b.com', name: 'A', emailVerified: true });
+      expect(res.status).toBe(400);
+    });
   });
 });

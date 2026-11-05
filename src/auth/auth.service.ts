@@ -80,6 +80,27 @@ export class AuthService {
     return this.issueToken(user);
   }
 
+  // Called by the front server once Google confirmed who the person is. The provider e-mail
+  // must be verified, otherwise anyone could claim an address they do not own.
+  async oauthLogin({ email, name, emailVerified }: { email: string; name: string; emailVerified: boolean }) {
+    if (!emailVerified) {
+      throw new UnauthorizedException('E-mail do provedor não verificado');
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    let user = await this.userService.findOne(normalizedEmail);
+    if (!user) {
+      user = await this.userService.createNewUser({
+        name: name.trim(),
+        email: normalizedEmail,
+        emailVerified: true,
+      });
+    } else if (!user.emailVerified) {
+      await this.userService.markEmailVerified(String(user._id));
+    }
+    return this.issueToken(user);
+  }
+
   private issueToken(user: { _id: unknown; email: string; name: string }) {
     const id = String(user._id);
     const { accessToken } = this.jwtAuthService.login({
