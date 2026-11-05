@@ -1,5 +1,7 @@
 import {
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -7,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
 import { MailService } from './../mail/mail.service';
+import { CacheService } from './../cache/cache.service';
 import { UserService } from './../user/user.service';
 import { JwtAuthService } from './../jwt/jwt.service';
 import { RegisterDto } from './dto/register.dto';
@@ -15,12 +18,16 @@ import { LoginDto } from './dto/login.dto';
 // Compared against when the email is unknown, so a miss costs the same as a wrong password.
 const DUMMY_HASH = bcrypt.hashSync('dummy-password', 12);
 
+export const MAX_LOGIN_FAILURES = 5;
+export const LOGIN_FAIL_WINDOW_SECONDS = 15 * 60;
+
 @Injectable()
 export class AuthService {
   constructor(
     private userService: UserService,
     private jwtAuthService: JwtAuthService,
     private mail: MailService,
+    private cache: CacheService,
   ) {}
 
   async register({ name, email, password }: RegisterDto) {
@@ -49,15 +56,27 @@ export class AuthService {
   }
 
   async login({ email, password }: LoginDto) {
-    const user = await this.userService.findByEmailWithPassword(
-      email.trim().toLowerCase(),
-    );
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // per-account brake against password guessing (the per-IP limit alone is not enough
+    // when the attacker rotates addresses): too many recent failures -> wait
+    const failKey = `login-fail:${normalizedEmail}`;
+    if ((await this.cache.count(failKey)) >= MAX_LOGIN_FAILURES) {
+      throw new HttpException(
+        'Muitas tentativas. Tente novamente em alguns minutos.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const user = await this.userService.findByEmailWithPassword(normalizedEmail);
     const valid = await bcrypt.compare(password, user?.password ?? DUMMY_HASH);
 
     if (!user || !user.password || !valid) {
+      await this.cache.incr(failKey, LOGIN_FAIL_WINDOW_SECONDS);
       throw new UnauthorizedException('Email ou senha inválidos');
     }
 
+    await this.cache.reset(failKey);
     return this.issueToken(user);
   }
 

@@ -9,27 +9,27 @@ import {
   Sse,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
+import { clientIp } from '../common/app-throttler.guard';
 import { AnalyticsService } from './analytics.service';
 import { TrackClickDto, TrackViewDto } from './dto/track.dto';
 
-function visitor(req: any): string {
-  // the Next proxy forwards the browser IP in x-forwarded-for
-  const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim();
-  return forwarded || req.ip || 'unknown';
-}
+const visitor = clientIp;
 
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
   @Post('view')
+  @Throttle(60, 60)
   @HttpCode(200)
   view(@Req() req, @Body() dto: TrackViewDto) {
     return this.analytics.trackView(visitor(req), dto.profile);
   }
 
   @Post('click')
+  @Throttle(60, 60)
   @HttpCode(200)
   click(@Req() req, @Body() dto: TrackClickDto) {
     return this.analytics.trackClick(visitor(req), dto.linkId);
