@@ -33,6 +33,7 @@ async function seed() {
       name,
       email,
       passwordHash: await bcrypt.hash(password, 12),
+      emailVerified: true,
     });
     console.log(`Seed: created ${email}`);
   } finally {

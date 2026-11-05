@@ -8,6 +8,8 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthModule } from './jwt/jwt.module';
 import { LinksModule } from './links/links.module';
 import { StorageModule } from './storage/storage.module';
+import { AnalyticsModule } from './analytics/analytics.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { StorageModule } from './storage/storage.module';
     JwtAuthModule,
     LinksModule,
     StorageModule,
+    AnalyticsModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

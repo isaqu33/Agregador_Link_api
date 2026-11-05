@@ -1,10 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsUrl,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class EditLinkDto {
   @IsString()
@@ -16,9 +10,9 @@ export class EditLinkDto {
   @MaxLength(100)
   name?: string;
 
-  // http/https only, same rule as CreateLinkDto
+  // validated against the stored type in LinksService
   @IsOptional()
-  @IsUrl({ protocols: ['http', 'https'], require_protocol: true })
+  @IsString()
   @MaxLength(2000)
   link?: string;
 }
