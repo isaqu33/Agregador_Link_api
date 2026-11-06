@@ -5,7 +5,7 @@ import { interval, merge, Observable, Subject } from 'rxjs';
 import { CacheService } from '../cache/cache.service';
 import { filter, map } from 'rxjs/operators';
 import { toCsv } from '../common/csv';
-import { Device, deviceFromUserAgent, referrerHost } from '../common/visitor';
+import { deviceFromUserAgent, referrerHost } from '../common/visitor';
 import { Link, LinkDocument } from '../links/schemas/link.schema';
 import { Page, PageDocument } from '../pages/schemas/page.schema';
 import { User, UserDocument } from '../user/schemas/user.schema';
@@ -60,14 +60,36 @@ export class AnalyticsService {
 
   // Never throws for unknown targets: tracking must not break the public page.
   // `profile` is a user/page id or @username; the owner of the page gets the event.
-  async trackView(visitor: string, profile: string, userAgent?: string, referrer?: string) {
+  async trackView(
+    visitor: string,
+    profile: string,
+    userAgent?: string,
+    referrer?: string,
+  ) {
     const handle = profile.replace(/^@/, '').toLowerCase();
     const target = isValidObjectId(profile)
-      ? (await this.userModel.findById(profile).select('_id').then((u) => u && { owner: u._id, page: null })) ||
-        (await this.pageModel.findById(profile).select('userId').then((p) => p && { owner: p.userId, page: p._id }))
-      : (await this.userModel.findOne({ username: handle }).select('_id').then((u) => u && { owner: u._id, page: null })) ||
-        (await this.pageModel.findOne({ username: handle }).select('userId').then((p) => p && { owner: p.userId, page: p._id }));
-    if (!target || (await this.seenRecently(`v|${visitor}|${target.owner}|${target.page ?? ''}`))) {
+      ? (await this.userModel
+          .findById(profile)
+          .select('_id')
+          .then((u) => u && { owner: u._id, page: null })) ||
+        (await this.pageModel
+          .findById(profile)
+          .select('userId')
+          .then((p) => p && { owner: p.userId, page: p._id }))
+      : (await this.userModel
+          .findOne({ username: handle })
+          .select('_id')
+          .then((u) => u && { owner: u._id, page: null })) ||
+        (await this.pageModel
+          .findOne({ username: handle })
+          .select('userId')
+          .then((p) => p && { owner: p.userId, page: p._id }));
+    if (
+      !target ||
+      (await this.seenRecently(
+        `v|${visitor}|${target.owner}|${target.page ?? ''}`,
+      ))
+    ) {
       return { ok: true };
     }
 
@@ -116,7 +138,10 @@ export class AnalyticsService {
   stream(userId: string): Observable<{ type: string; data: object }> {
     const events = this.live.pipe(
       filter((e) => e.userId === userId),
-      map((e) => ({ type: e.type, data: { linkId: e.linkId, pageId: e.pageId ?? null, at: e.at } })),
+      map((e) => ({
+        type: e.type,
+        data: { linkId: e.linkId, pageId: e.pageId ?? null, at: e.at },
+      })),
     );
     const ping = interval(25000).pipe(map(() => ({ type: 'ping', data: {} })));
     return merge(events, ping);
@@ -133,7 +158,13 @@ export class AnalyticsService {
         {
           $group: {
             _id: {
-              day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: TZ } },
+              day: {
+                $dateToString: {
+                  format: '%Y-%m-%d',
+                  date: '$createdAt',
+                  timezone: TZ,
+                },
+              },
               type: '$type',
             },
             n: { $sum: 1 },
@@ -141,18 +172,49 @@ export class AnalyticsService {
         },
       ]),
       this.eventModel.aggregate([
-        { $match: { userId: uid, pageId: page, type: 'click', createdAt: { $gte: since } } },
+        {
+          $match: {
+            userId: uid,
+            pageId: page,
+            type: 'click',
+            createdAt: { $gte: since },
+          },
+        },
         { $group: { _id: '$linkId', n: { $sum: 1 } } },
       ]),
-      this.linkModel.find({ userId: uid, pageId: page }).select('name type').sort({ order: 1, _id: 1 }),
+      this.linkModel
+        .find({ userId: uid, pageId: page })
+        .select('name type')
+        .sort({ order: 1, _id: 1 }),
       this.eventModel.aggregate([
-        { $match: { userId: uid, pageId: page, type: 'view', createdAt: { $gte: since } } },
-        { $group: { _id: { $ifNull: ['$device', 'desconhecido'] }, n: { $sum: 1 } } },
+        {
+          $match: {
+            userId: uid,
+            pageId: page,
+            type: 'view',
+            createdAt: { $gte: since },
+          },
+        },
+        {
+          $group: {
+            _id: { $ifNull: ['$device', 'desconhecido'] },
+            n: { $sum: 1 },
+          },
+        },
         { $sort: { n: -1 } },
       ]),
       this.eventModel.aggregate([
-        { $match: { userId: uid, pageId: page, type: 'view', createdAt: { $gte: since } } },
-        { $group: { _id: { $ifNull: ['$referrer', 'direto'] }, n: { $sum: 1 } } },
+        {
+          $match: {
+            userId: uid,
+            pageId: page,
+            type: 'view',
+            createdAt: { $gte: since },
+          },
+        },
+        {
+          $group: { _id: { $ifNull: ['$referrer', 'direto'] }, n: { $sum: 1 } },
+        },
         { $sort: { n: -1 } },
         { $limit: 8 },
       ]),
@@ -176,28 +238,51 @@ export class AnalyticsService {
       }
     }
 
-    const clicksByLink = new Map(perLink.map((r) => [String(r._id), r.n as number]));
+    const clicksByLink = new Map(
+      perLink.map((r) => [String(r._id), r.n as number]),
+    );
     return {
       days,
       views,
       clicks,
       ctr: views > 0 ? Math.round((clicks / views) * 1000) / 10 : 0,
       daily: [...byDay].map(([day, v]) => ({ day, ...v })),
-      devices: perDevice.map((r) => ({ device: r._id as string, views: r.n as number })),
-      referrers: perReferrer.map((r) => ({ host: r._id as string, views: r.n as number })),
+      devices: perDevice.map((r) => ({
+        device: r._id as string,
+        views: r.n as number,
+      })),
+      referrers: perReferrer.map((r) => ({
+        host: r._id as string,
+        views: r.n as number,
+      })),
       links: links
         .filter((l) => l.type !== 'Cabecalho')
-        .map((l) => ({ id: String(l._id), name: l.name, clicks: clicksByLink.get(String(l._id)) ?? 0 }))
+        .map((l) => ({
+          id: String(l._id),
+          name: l.name,
+          clicks: clicksByLink.get(String(l._id)) ?? 0,
+        }))
         .sort((a, b) => b.clicks - a.clicks),
     };
   }
 
   // CSV of the numbers shown in the panel: per day, or clicks per link.
-  async exportCsv(userId: string, days: number, kind: 'daily' | 'links', pageId?: string) {
+  async exportCsv(
+    userId: string,
+    days: number,
+    kind: 'daily' | 'links',
+    pageId?: string,
+  ) {
     const s = await this.summary(userId, days, pageId);
     return kind === 'links'
-      ? toCsv(['link', 'cliques'], s.links.map((l) => [l.name, l.clicks]))
-      : toCsv(['dia', 'visitas', 'cliques'], s.daily.map((d) => [d.day, d.views, d.clicks]));
+      ? toCsv(
+          ['link', 'cliques'],
+          s.links.map((l) => [l.name, l.clicks]),
+        )
+      : toCsv(
+          ['dia', 'visitas', 'cliques'],
+          s.daily.map((d) => [d.day, d.views, d.clicks]),
+        );
   }
 }
 
@@ -213,5 +298,7 @@ function startOfDay(date: Date) {
 }
 
 function dayKey(date: Date) {
-  return new Date(date.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return new Date(date.getTime() - 3 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
 }

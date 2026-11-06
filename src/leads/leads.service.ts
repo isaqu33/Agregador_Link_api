@@ -7,7 +7,9 @@ import { CaptureLeadDto } from './dto/lead.dto';
 import { Lead, LeadDocument } from './schemas/lead.schema';
 
 const pageFilter = (pageId?: string) =>
-  pageId && isValidObjectId(pageId) ? { pageId: new Types.ObjectId(pageId) } : { pageId: null };
+  pageId && isValidObjectId(pageId)
+    ? { pageId: new Types.ObjectId(pageId) }
+    : { pageId: null };
 
 @Injectable()
 export class LeadsService {
@@ -45,7 +47,9 @@ export class LeadsService {
         .find({ userId, ...pageFilter(pageId) })
         .sort({ createdAt: -1 })
         .limit(500),
-      this.linkModel.find({ userId, type: 'Newsletter', ...pageFilter(pageId) }).select('name'),
+      this.linkModel
+        .find({ userId, type: 'Newsletter', ...pageFilter(pageId) })
+        .select('name'),
     ]);
     const formName = new Map(forms.map((f) => [String(f._id), f.name]));
     return {
@@ -62,7 +66,8 @@ export class LeadsService {
 
   async remove(userId: string, id: string) {
     const res = await this.leadModel.deleteOne({ _id: id, userId });
-    if (!res.deletedCount) throw new NotFoundException('Contato não encontrado');
+    if (!res.deletedCount)
+      throw new NotFoundException('Contato não encontrado');
     return { ok: true };
   }
 
@@ -70,7 +75,12 @@ export class LeadsService {
     const { leads } = await this.list(userId, pageId);
     return toCsv(
       ['email', 'nome', 'formulario', 'data'],
-      leads.map((l) => [l.email, l.name, l.form, new Date(l.createdAt).toISOString()]),
+      leads.map((l) => [
+        l.email,
+        l.name,
+        l.form,
+        new Date(l.createdAt).toISOString(),
+      ]),
     );
   }
 }

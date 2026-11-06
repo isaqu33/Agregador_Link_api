@@ -19,4 +19,7 @@ class EditLinkBase {
   link?: string;
 }
 
-export class EditLinkDto extends IntersectionType(EditLinkBase, LinkOptionsDto) {}
+export class EditLinkDto extends IntersectionType(
+  EditLinkBase,
+  LinkOptionsDto,
+) {}

@@ -1,4 +1,10 @@
-import { IsEmail, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsEmail,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class CaptureLeadDto {
   @IsMongoId()

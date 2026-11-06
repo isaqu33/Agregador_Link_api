@@ -1,14 +1,31 @@
-import { Body, Controller, Headers, HttpCode, NotFoundException, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Headers,
+  HttpCode,
+  NotFoundException,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHash, timingSafeEqual } from 'crypto';
 import { OAuthLoginDto } from './dto/oauth.dto';
 import { JwtAuthGuard } from './../jwt/jwt-auth.guard';
-import { ForgotPasswordDto, ResetPasswordDto, VerifyEmailDto } from './dto/tokens.dto';
+import {
+  ForgotPasswordDto,
+  ResetPasswordDto,
+  VerifyEmailDto,
+} from './dto/tokens.dto';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 
+@ApiTags('auth')
+@ApiBearerAuth()
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -62,7 +79,10 @@ export class AuthController {
   @Post('oauth')
   @HttpCode(200)
   @Throttle(30, 60)
-  oauth(@Headers('x-oauth-secret') secret: string | undefined, @Body() dto: OAuthLoginDto) {
+  oauth(
+    @Headers('x-oauth-secret') secret: string | undefined,
+    @Body() dto: OAuthLoginDto,
+  ) {
     const expected = this.config.get<string>('OAUTH_SHARED_SECRET');
     if (!expected) throw new NotFoundException(); // feature off
     const digest = (v: string) => createHash('sha256').update(v).digest();

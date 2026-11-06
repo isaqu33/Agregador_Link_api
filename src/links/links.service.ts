@@ -82,8 +82,16 @@ export class LinksService {
       })
       .sort({ order: 1, _id: 1 });
 
-    const { name, photoURL, template, title, about, username, socials, pixels } =
-      source.doc;
+    const {
+      name,
+      photoURL,
+      template,
+      title,
+      about,
+      username,
+      socials,
+      pixels,
+    } = source.doc;
 
     return {
       id: String(source.doc._id),
@@ -140,7 +148,13 @@ export class LinksService {
     }
     if (dto.name !== undefined) found.name = dto.name;
 
-    const extras = await this.buildExtras(userId, found.type, found.link, dto, found);
+    const extras = await this.buildExtras(
+      userId,
+      found.type,
+      found.link,
+      dto,
+      found,
+    );
     Object.assign(found, extras);
     if (dto.removePassword) {
       found.locked = false;
@@ -188,20 +202,41 @@ export class LinksService {
     }
     if (dto.featured !== undefined) extras.featured = dto.featured;
 
-    if (dto.startAt !== undefined) extras.startAt = dto.startAt ? new Date(dto.startAt) : null;
-    if (dto.endAt !== undefined) extras.endAt = dto.endAt ? new Date(dto.endAt) : null;
-    const start = (extras.startAt ?? (dto.startAt === undefined ? current?.startAt : null)) as Date | null | undefined;
-    const end = (extras.endAt ?? (dto.endAt === undefined ? current?.endAt : null)) as Date | null | undefined;
+    if (dto.startAt !== undefined)
+      extras.startAt = dto.startAt ? new Date(dto.startAt) : null;
+    if (dto.endAt !== undefined)
+      extras.endAt = dto.endAt ? new Date(dto.endAt) : null;
+    const start = (extras.startAt ??
+      (dto.startAt === undefined ? current?.startAt : null)) as
+      | Date
+      | null
+      | undefined;
+    const end = (extras.endAt ??
+      (dto.endAt === undefined ? current?.endAt : null)) as
+      | Date
+      | null
+      | undefined;
     if (start && end && end <= start) {
-      throw new BadRequestException('O fim do agendamento deve ser depois do início');
+      throw new BadRequestException(
+        'O fim do agendamento deve ser depois do início',
+      );
     }
 
     if (dto.embed !== undefined) {
-      if (dto.embed && !(EMBED_TYPES.includes(type) && toEmbedUrl(type, link))) {
-        throw new BadRequestException('Este link não tem player (use um link do YouTube ou Spotify)');
+      if (
+        dto.embed &&
+        !(EMBED_TYPES.includes(type) && toEmbedUrl(type, link))
+      ) {
+        throw new BadRequestException(
+          'Este link não tem player (use um link do YouTube ou Spotify)',
+        );
       }
       extras.embed = dto.embed;
-    } else if (current?.embed && dto.link !== undefined && !toEmbedUrl(type, link)) {
+    } else if (
+      current?.embed &&
+      dto.link !== undefined &&
+      !toEmbedUrl(type, link)
+    ) {
       extras.embed = false; // the new URL no longer has a player
     }
 
@@ -236,7 +271,9 @@ export class LinksService {
       const user = await this.userModel.findById(idOrUsername);
       if (user) return { doc: user, ownerId: user._id, pageId: null };
       const page = await this.pageModel.findById(idOrUsername);
-      return page ? { doc: page, ownerId: page.userId, pageId: page._id } : null;
+      return page
+        ? { doc: page, ownerId: page.userId, pageId: page._id }
+        : null;
     }
 
     const user = await this.userModel.findOne({ username: handle });

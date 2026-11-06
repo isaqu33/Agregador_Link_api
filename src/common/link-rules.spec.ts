@@ -1,4 +1,9 @@
-import { linkError, socialUrlError, USERNAME_PATTERN, RESERVED_USERNAMES } from './link-rules';
+import {
+  linkError,
+  socialUrlError,
+  USERNAME_PATTERN,
+  RESERVED_USERNAMES,
+} from './link-rules';
 
 describe('linkError', () => {
   it('accepts http(s) for url types', () => {
@@ -37,6 +42,8 @@ describe('username', () => {
     expect(USERNAME_PATTERN.test('_maria')).toBe(false);
   });
   it('reserves front routes', () => {
-    ['login', 'costumer', 'api', 'u'].forEach((r) => expect(RESERVED_USERNAMES.has(r)).toBe(true));
+    ['login', 'costumer', 'api', 'u'].forEach((r) =>
+      expect(RESERVED_USERNAMES.has(r)).toBe(true),
+    );
   });
 });

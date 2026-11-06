@@ -68,7 +68,9 @@ export class AuthService {
       );
     }
 
-    const user = await this.userService.findByEmailWithPassword(normalizedEmail);
+    const user = await this.userService.findByEmailWithPassword(
+      normalizedEmail,
+    );
     const valid = await bcrypt.compare(password, user?.password ?? DUMMY_HASH);
 
     if (!user || !user.password || !valid) {
@@ -82,7 +84,15 @@ export class AuthService {
 
   // Called by the front server once Google confirmed who the person is. The provider e-mail
   // must be verified, otherwise anyone could claim an address they do not own.
-  async oauthLogin({ email, name, emailVerified }: { email: string; name: string; emailVerified: boolean }) {
+  async oauthLogin({
+    email,
+    name,
+    emailVerified,
+  }: {
+    email: string;
+    name: string;
+    emailVerified: boolean;
+  }) {
     if (!emailVerified) {
       throw new UnauthorizedException('E-mail do provedor não verificado');
     }
@@ -117,7 +127,10 @@ export class AuthService {
 
   async sendVerification(user: { _id: unknown; name: string; email: string }) {
     const token = randomBytes(32).toString('hex');
-    await this.userService.setEmailVerifyHash(String(user._id), hashToken(token));
+    await this.userService.setEmailVerifyHash(
+      String(user._id),
+      hashToken(token),
+    );
     await this.mail.sendVerification(user.email, user.name, token);
   }
 

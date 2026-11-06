@@ -1,8 +1,9 @@
+import { randomUUID } from 'crypto';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { LoggerModule } from 'nestjs-pino';
+import { HealthModule } from './health/health.module';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthModule } from './jwt/jwt.module';
@@ -30,6 +31,25 @@ import { ThrottlerModule } from '@nestjs/throttler';
         uri: config.get<string>('DATABASE_URL'),
       }),
     }),
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level:
+          process.env.LOG_LEVEL ??
+          (process.env.NODE_ENV === 'test' ? 'silent' : 'info'),
+        // never log credentials or session tokens
+        redact: ['req.headers.authorization', 'req.headers.cookie'],
+        autoLogging: { ignore: (req) => (req.url ?? '').startsWith('/health') },
+        genReqId: (req, res) => {
+          const id = (req.headers['x-request-id'] as string) || randomUUID();
+          res.setHeader('x-request-id', id);
+          return id;
+        },
+        transport:
+          process.env.NODE_ENV === 'development'
+            ? { target: 'pino-pretty', options: { singleLine: true } }
+            : undefined,
+      },
+    }),
     CacheModule,
     // default limit per IP and route; sensitive routes override it with @Throttle
     ThrottlerModule.forRootAsync({
@@ -37,7 +57,9 @@ import { ThrottlerModule } from '@nestjs/throttler';
       useFactory: (cache: CacheService) => ({
         ttl: 60,
         limit: 120,
-        storage: cache.redis ? new RedisThrottlerStorage(cache.redis) : undefined,
+        storage: cache.redis
+          ? new RedisThrottlerStorage(cache.redis)
+          : undefined,
       }),
     }),
     UserModule,
@@ -49,8 +71,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
     PagesModule,
     LeadsModule,
     MailModule,
+    HealthModule,
   ],
-  controllers: [AppController],
-  providers: [AppService, { provide: APP_GUARD, useClass: AppThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: AppThrottlerGuard }],
 })
 export class AppModule {}

@@ -27,7 +27,13 @@ export class User {
   about?: string | null;
 
   // Public handle: /@username. Optional, so users created before it keep working.
-  @Prop({ type: String, unique: true, sparse: true, lowercase: true, trim: true })
+  @Prop({
+    type: String,
+    unique: true,
+    sparse: true,
+    lowercase: true,
+    trim: true,
+  })
   username?: string;
 
   // Icons shown at the top of the public page.

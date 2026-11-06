@@ -28,7 +28,13 @@ export class Page {
   @Prop({ required: true, trim: true })
   name: string;
 
-  @Prop({ type: String, unique: true, sparse: true, lowercase: true, trim: true })
+  @Prop({
+    type: String,
+    unique: true,
+    sparse: true,
+    lowercase: true,
+    trim: true,
+  })
   username?: string;
 
   @Prop({ type: String, default: null })

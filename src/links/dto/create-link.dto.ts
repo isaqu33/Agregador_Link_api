@@ -1,5 +1,11 @@
 import { IntersectionType } from '@nestjs/mapped-types';
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { LINK_TYPES } from '../../common/link-rules';
 import { LinkOptionsDto, PageRefDto } from './link-options.dto';
 

@@ -46,7 +46,11 @@ export class UserService {
     return {
       ...user.toJSON(),
       links,
-      pages: pages.map((p) => ({ id: String(p._id), name: p.name, username: p.username })),
+      pages: pages.map((p) => ({
+        id: String(p._id),
+        name: p.name,
+        username: p.username,
+      })),
     };
   }
 
@@ -74,9 +78,13 @@ export class UserService {
     }
 
     try {
-      return await this.userModel.findByIdAndUpdate(userId, profileChanges(dto), {
-        new: true,
-      });
+      return await this.userModel.findByIdAndUpdate(
+        userId,
+        profileChanges(dto),
+        {
+          new: true,
+        },
+      );
     } catch (error) {
       if (isDuplicateKey(error)) {
         throw new ConflictException('Nome de usuário já está em uso');

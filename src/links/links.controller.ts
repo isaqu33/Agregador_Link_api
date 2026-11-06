@@ -1,3 +1,4 @@
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Body,
   Controller,
@@ -18,6 +19,8 @@ import { Throttle } from '@nestjs/throttler';
 import { UnlockLinkDto } from './dto/unlock-link.dto';
 import { HttpCode } from '@nestjs/common';
 
+@ApiTags('links')
+@ApiBearerAuth()
 @Controller('links')
 export class LinksController {
   constructor(private readonly linksService: LinksService) {}

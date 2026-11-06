@@ -25,15 +25,23 @@ export function checkProfileInput(dto: ProfileInput) {
 
 // Only the fields that were sent; empty pixel ids are dropped.
 export function profileChanges(dto: ProfileInput) {
-  const { name, photoURL, template, title, about, username, socials, pixels } = dto;
+  const { name, photoURL, template, title, about, username, socials, pixels } =
+    dto;
   const clean = pixels
     ? Object.fromEntries(Object.entries(pixels).filter(([, v]) => v))
     : undefined;
 
   return Object.fromEntries(
-    Object.entries({ name, photoURL, template, title, about, username, socials, pixels: clean }).filter(
-      ([, value]) => value !== undefined,
-    ),
+    Object.entries({
+      name,
+      photoURL,
+      template,
+      title,
+      about,
+      username,
+      socials,
+      pixels: clean,
+    }).filter(([, value]) => value !== undefined),
   );
 }
 

@@ -36,7 +36,11 @@ export class PagesService {
         `Limite de ${MAX_EXTRA_PAGES} páginas extras por conta`,
       );
     }
-    return this.pageModel.create({ userId, name: name.trim(), title: name.trim() });
+    return this.pageModel.create({
+      userId,
+      name: name.trim(),
+      title: name.trim(),
+    });
   }
 
   // Page + its links, in the shape the panel already uses for the main page.
@@ -59,9 +63,13 @@ export class PagesService {
     }
 
     try {
-      return await this.pageModel.findByIdAndUpdate(page._id, profileChanges(dto), {
-        new: true,
-      });
+      return await this.pageModel.findByIdAndUpdate(
+        page._id,
+        profileChanges(dto),
+        {
+          new: true,
+        },
+      );
     } catch (error) {
       if (isDuplicateKey(error)) {
         throw new ConflictException('Nome de usuário já está em uso');

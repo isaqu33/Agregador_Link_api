@@ -77,7 +77,9 @@ export class CacheService implements OnModuleDestroy {
     if (!set) {
       set = new Set();
       this.listeners.set(channel, set);
-      this.subscriber?.subscribe(channel).catch((e) => this.logger.error(`Redis: ${e.message}`));
+      this.subscriber
+        ?.subscribe(channel)
+        .catch((e) => this.logger.error(`Redis: ${e.message}`));
     }
     set.add(listener);
   }
@@ -89,6 +91,7 @@ export class CacheService implements OnModuleDestroy {
   // keeps the in-memory map from growing forever
   private sweep(now: number) {
     if (this.counters.size < 5000) return;
-    for (const [k, v] of this.counters) if (v.expires <= now) this.counters.delete(k);
+    for (const [k, v] of this.counters)
+      if (v.expires <= now) this.counters.delete(k);
   }
 }

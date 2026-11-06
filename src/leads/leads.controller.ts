@@ -1,10 +1,23 @@
-import { Body, Controller, Get, HttpCode, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
 import { CaptureLeadDto, DeleteLeadDto } from './dto/lead.dto';
 import { LeadsService } from './leads.service';
 
+@ApiTags('leads')
+@ApiBearerAuth()
 @Controller('leads')
 export class LeadsController {
   constructor(private readonly leads: LeadsService) {}
@@ -25,7 +38,11 @@ export class LeadsController {
 
   @Get('export')
   @UseGuards(JwtAuthGuard)
-  async export(@Req() req, @Res() res: Response, @Query('pageId') pageId?: string) {
+  async export(
+    @Req() req,
+    @Res() res: Response,
+    @Query('pageId') pageId?: string,
+  ) {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="contatos.csv"');
     res.send(await this.leads.exportCsv(req.user.sub, pageId));
