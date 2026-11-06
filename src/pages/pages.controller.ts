@@ -1,8 +1,19 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
 import { CreatePageDto, DeletePageDto, EditPageDto } from './dto/page.dto';
 import { PagesService } from './pages.service';
 
+@ApiTags('pages')
+@ApiBearerAuth()
 @Controller('pages')
 @UseGuards(JwtAuthGuard)
 export class PagesController {

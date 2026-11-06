@@ -12,7 +12,9 @@ export class MailService {
 
   constructor(private config: ConfigService) {
     const host = this.config.get<string>('SMTP_HOST');
-    this.from = this.config.get<string>('MAIL_FROM') ?? 'FaceLink <no-reply@facelink.local>';
+    this.from =
+      this.config.get<string>('MAIL_FROM') ??
+      'FaceLink <no-reply@facelink.local>';
 
     if (host) {
       const port = Number(this.config.get('SMTP_PORT') ?? 587);
@@ -21,25 +23,39 @@ export class MailService {
         host,
         port,
         secure: port === 465,
-        auth: user ? { user, pass: this.config.get<string>('SMTP_PASS') } : undefined,
+        auth: user
+          ? { user, pass: this.config.get<string>('SMTP_PASS') }
+          : undefined,
       });
     }
   }
 
   get appUrl() {
-    return (this.config.get<string>('APP_URL') ?? 'http://localhost:3071').replace(/\/$/, '');
+    return (
+      this.config.get<string>('APP_URL') ?? 'http://localhost:3071'
+    ).replace(/\/$/, '');
   }
 
   async send(to: string, subject: string, text: string, html: string) {
     if (!this.transport) {
-      this.logger.warn(`SMTP não configurado. E-mail para ${to}\n${subject}\n${text}`);
+      this.logger.warn(
+        `SMTP não configurado. E-mail para ${to}\n${subject}\n${text}`,
+      );
       return;
     }
     try {
-      await this.transport.sendMail({ from: this.from, to, subject, text, html });
+      await this.transport.sendMail({
+        from: this.from,
+        to,
+        subject,
+        text,
+        html,
+      });
     } catch (error) {
       // never break sign-up or recovery because the mail server is down
-      this.logger.error(`Falha ao enviar e-mail para ${to}: ${(error as Error).message}`);
+      this.logger.error(
+        `Falha ao enviar e-mail para ${to}: ${(error as Error).message}`,
+      );
     }
   }
 
@@ -49,7 +65,12 @@ export class MailService {
       to,
       'Confirme seu e-mail no FaceLink',
       `Olá, ${name}! Confirme seu e-mail: ${link}`,
-      this.layout(`Olá, ${escapeHtml(name)}!`, 'Confirme seu e-mail para ativar sua conta.', 'Confirmar e-mail', link),
+      this.layout(
+        `Olá, ${escapeHtml(name)}!`,
+        'Confirme seu e-mail para ativar sua conta.',
+        'Confirmar e-mail',
+        link,
+      ),
     );
   }
 

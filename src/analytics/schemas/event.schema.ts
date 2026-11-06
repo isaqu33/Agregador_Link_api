@@ -2,7 +2,10 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 // One row per page view or link click of a public page.
-@Schema({ timestamps: { createdAt: true, updatedAt: false }, versionKey: false })
+@Schema({
+  timestamps: { createdAt: true, updatedAt: false },
+  versionKey: false,
+})
 export class Event {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId;

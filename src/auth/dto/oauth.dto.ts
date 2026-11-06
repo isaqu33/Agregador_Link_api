@@ -1,4 +1,11 @@
-import { IsBoolean, IsEmail, IsIn, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 // Sent by the Next server after it verified the provider login (never by a browser).
 export class OAuthLoginDto {

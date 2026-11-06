@@ -25,7 +25,9 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
     oauthLogin: jest.fn().mockResolvedValue({ accessToken: 't' }),
   };
   const leads = { capture: jest.fn().mockResolvedValue({ ok: true }) };
-  const links = { unlock: jest.fn().mockResolvedValue({ link: 'https://x.com' }) };
+  const links = {
+    unlock: jest.fn().mockResolvedValue({ link: 'https://x.com' }),
+  };
   let oauthSecret: string | undefined = 'segredo-compartilhado';
 
   beforeEach(async () => {
@@ -37,20 +39,35 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
         { provide: AuthService, useValue: auth },
         { provide: LeadsService, useValue: leads },
         { provide: LinksService, useValue: links },
-        { provide: ConfigService, useValue: { get: (k: string) => (k === 'OAUTH_SHARED_SECRET' ? oauthSecret : undefined) } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (k: string) =>
+              k === 'OAUTH_SHARED_SECRET' ? oauthSecret : undefined,
+          },
+        },
         { provide: APP_GUARD, useClass: AppThrottlerGuard },
       ],
     }).compile();
 
     app = moduleRef.createNestApplication();
     app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
     await app.init();
   });
   afterEach(() => app.close());
 
   const login = (ip: string) =>
-    request(app.getHttpServer()).post('/auth/login').set('x-forwarded-for', ip).send({ email: 'a@b.com', password: 'x' });
+    request(app.getHttpServer())
+      .post('/auth/login')
+      .set('x-forwarded-for', ip)
+      .send({ email: 'a@b.com', password: 'x' });
 
   it('sets the helmet security headers', async () => {
     const res = await login('1.1.1.1');
@@ -62,7 +79,8 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
   });
 
   it('limits login to 10 per minute per IP, then answers 429 with Retry-After', async () => {
-    for (let i = 0; i < 10; i++) expect((await login('1.1.1.1')).status).toBe(200);
+    for (let i = 0; i < 10; i++)
+      expect((await login('1.1.1.1')).status).toBe(200);
     const blocked = await login('1.1.1.1');
     expect(blocked.status).toBe(429);
     expect(Number(blocked.headers['retry-after'])).toBeGreaterThan(0);
@@ -81,59 +99,132 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
   });
 
   it.each([
-    ['/auth/register', { name: 'M', email: 'a@b.com', password: 'senha-12345' }, 5],
+    [
+      '/auth/register',
+      { name: 'M', email: 'a@b.com', password: 'senha-12345' },
+      5,
+    ],
     ['/auth/forgot-password', { email: 'a@b.com' }, 3],
-    ['/auth/reset-password', { token: 'x'.repeat(40), password: 'senha-12345' }, 5],
+    [
+      '/auth/reset-password',
+      { token: 'x'.repeat(40), password: 'senha-12345' },
+      5,
+    ],
   ])('limits %s to %i per minute', async (path, body, limit) => {
-    const hit = () => request(app.getHttpServer()).post(path).set('x-forwarded-for', '9.9.9.9').send(body as object);
-    for (let i = 0; i < (limit as number); i++) expect((await hit()).status).toBe(path === '/auth/register' ? 201 : 200);
+    const hit = () =>
+      request(app.getHttpServer())
+        .post(path)
+        .set('x-forwarded-for', '9.9.9.9')
+        .send(body as object);
+    for (let i = 0; i < (limit as number); i++)
+      expect((await hit()).status).toBe(path === '/auth/register' ? 201 : 200);
     expect((await hit()).status).toBe(429);
   });
 
   it('limits are per route: exhausting login does not block forgot-password', async () => {
     for (let i = 0; i < 11; i++) await login('4.4.4.4');
-    const res = await request(app.getHttpServer()).post('/auth/forgot-password').set('x-forwarded-for', '4.4.4.4').send({ email: 'a@b.com' });
+    const res = await request(app.getHttpServer())
+      .post('/auth/forgot-password')
+      .set('x-forwarded-for', '4.4.4.4')
+      .send({ email: 'a@b.com' });
     expect(res.status).toBe(200);
   });
 
   it('validation rejects bad bodies before the service runs (400)', async () => {
     const http = request(app.getHttpServer());
-    expect((await http.post('/auth/login').set('x-forwarded-for', '5.5.5.5').send({ email: 'not-an-email', password: 'x' })).status).toBe(400);
-    expect((await http.post('/auth/register').set('x-forwarded-for', '5.5.5.5').send({ name: 'M', email: 'a@b.com', password: 'curta' })).status).toBe(400);
-    expect((await http.post('/auth/login').set('x-forwarded-for', '5.5.5.5').send({ email: 'a@b.com', password: 'x', admin: true })).status).toBe(400); // extra field
+    expect(
+      (
+        await http
+          .post('/auth/login')
+          .set('x-forwarded-for', '5.5.5.5')
+          .send({ email: 'not-an-email', password: 'x' })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await http
+          .post('/auth/register')
+          .set('x-forwarded-for', '5.5.5.5')
+          .send({ name: 'M', email: 'a@b.com', password: 'curta' })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await http
+          .post('/auth/login')
+          .set('x-forwarded-for', '5.5.5.5')
+          .send({ email: 'a@b.com', password: 'x', admin: true })
+      ).status,
+    ).toBe(400); // extra field
     expect(auth.login).not.toHaveBeenCalled();
     expect(auth.register).not.toHaveBeenCalled();
   });
 
   it('refuses to reset a password shorter than 8 characters', async () => {
-    const res = await request(app.getHttpServer()).post('/auth/reset-password').set('x-forwarded-for', '6.6.6.6').send({ token: 'x'.repeat(40), password: '123' });
+    const res = await request(app.getHttpServer())
+      .post('/auth/reset-password')
+      .set('x-forwarded-for', '6.6.6.6')
+      .send({ token: 'x'.repeat(40), password: '123' });
     expect(res.status).toBe(400);
     expect(auth.resetPassword).not.toHaveBeenCalled();
   });
 
   describe('public endpoints added for pages, leads and protected links', () => {
-    const lead = (ip: string, body: object = { linkId: '507f1f77bcf86cd799439011', email: 'a@b.com' }) =>
-      request(app.getHttpServer()).post('/leads').set('x-forwarded-for', ip).send(body);
+    const lead = (
+      ip: string,
+      body: object = { linkId: '507f1f77bcf86cd799439011', email: 'a@b.com' },
+    ) =>
+      request(app.getHttpServer())
+        .post('/leads')
+        .set('x-forwarded-for', ip)
+        .send(body);
 
     it('e-mail capture: 5 per minute per IP, bad e-mail is 400', async () => {
-      for (let i = 0; i < 5; i++) expect((await lead('11.1.1.1')).status).toBe(200);
+      for (let i = 0; i < 5; i++)
+        expect((await lead('11.1.1.1')).status).toBe(200);
       expect((await lead('11.1.1.1')).status).toBe(429);
-      expect((await lead('11.1.1.2', { linkId: '507f1f77bcf86cd799439011', email: 'nope' })).status).toBe(400);
-      expect((await lead('11.1.1.3', { linkId: 'not-an-id', email: 'a@b.com' })).status).toBe(400);
+      expect(
+        (
+          await lead('11.1.1.2', {
+            linkId: '507f1f77bcf86cd799439011',
+            email: 'nope',
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (await lead('11.1.1.3', { linkId: 'not-an-id', email: 'a@b.com' }))
+          .status,
+      ).toBe(400);
     });
 
     it('unlock: 10 per minute per IP and the body is validated', async () => {
-      const unlock = (ip: string, body: object = { linkId: '507f1f77bcf86cd799439011', password: 'x' }) =>
-        request(app.getHttpServer()).post('/links/unlock').set('x-forwarded-for', ip).send(body);
-      for (let i = 0; i < 10; i++) expect((await unlock('12.1.1.1')).status).toBe(200);
+      const unlock = (
+        ip: string,
+        body: object = { linkId: '507f1f77bcf86cd799439011', password: 'x' },
+      ) =>
+        request(app.getHttpServer())
+          .post('/links/unlock')
+          .set('x-forwarded-for', ip)
+          .send(body);
+      for (let i = 0; i < 10; i++)
+        expect((await unlock('12.1.1.1')).status).toBe(200);
       expect((await unlock('12.1.1.1')).status).toBe(429);
-      expect((await unlock('12.1.1.2', { linkId: 'x', password: 'x' })).status).toBe(400);
+      expect(
+        (await unlock('12.1.1.2', { linkId: 'x', password: 'x' })).status,
+      ).toBe(400);
     });
 
     const oauth = (secret?: string) => {
-      const req = request(app.getHttpServer()).post('/auth/oauth').set('x-forwarded-for', '13.1.1.1');
+      const req = request(app.getHttpServer())
+        .post('/auth/oauth')
+        .set('x-forwarded-for', '13.1.1.1');
       if (secret) req.set('x-oauth-secret', secret);
-      return req.send({ provider: 'google', email: 'a@b.com', name: 'A', emailVerified: true });
+      return req.send({
+        provider: 'google',
+        email: 'a@b.com',
+        name: 'A',
+        emailVerified: true,
+      });
     };
 
     it('oauth endpoint: only with the shared secret', async () => {
@@ -148,8 +239,16 @@ describe('HTTP security (rate limit, helmet, validation)', () => {
       oauthSecret = undefined;
       expect((await oauth('qualquer')).status).toBe(404);
       oauthSecret = 'segredo-compartilhado';
-      const res = await request(app.getHttpServer()).post('/auth/oauth').set('x-oauth-secret', oauthSecret).set('x-forwarded-for', '13.1.1.2')
-        .send({ provider: 'facebook', email: 'a@b.com', name: 'A', emailVerified: true });
+      const res = await request(app.getHttpServer())
+        .post('/auth/oauth')
+        .set('x-oauth-secret', oauthSecret)
+        .set('x-forwarded-for', '13.1.1.2')
+        .send({
+          provider: 'facebook',
+          email: 'a@b.com',
+          name: 'A',
+          emailVerified: true,
+        });
       expect(res.status).toBe(400);
     });
   });

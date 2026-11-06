@@ -14,44 +14,78 @@ describe('UserService.editProfireUser', () => {
 
   it('only sends the fields that were provided', async () => {
     await service.editProfireUser('u1', { title: 'Novo' });
-    expect(users.findByIdAndUpdate).toHaveBeenCalledWith('u1', { title: 'Novo' }, { new: true });
+    expect(users.findByIdAndUpdate).toHaveBeenCalledWith(
+      'u1',
+      { title: 'Novo' },
+      { new: true },
+    );
   });
 
-  it.each(['login', 'costumer', 'api', 'u', 'admin'])('refuses the reserved username %s (409)', async (username) => {
-    await expect(service.editProfireUser('u1', { username })).rejects.toBeInstanceOf(ConflictException);
-    expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
-  });
+  it.each(['login', 'costumer', 'api', 'u', 'admin'])(
+    'refuses the reserved username %s (409)',
+    async (username) => {
+      await expect(
+        service.editProfireUser('u1', { username }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
+    },
+  );
 
   it('refuses a username already used by an extra page (409)', async () => {
     pages.exists.mockResolvedValue({ _id: 'p1' });
-    await expect(service.editProfireUser('u1', { username: 'loja' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.editProfireUser('u1', { username: 'loja' }),
+    ).rejects.toBeInstanceOf(ConflictException);
     expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   it('stores pixels without empty ids', async () => {
     await service.editProfireUser('u1', { pixels: { meta: '123456', ga: '' } });
-    expect(users.findByIdAndUpdate).toHaveBeenCalledWith('u1', { pixels: { meta: '123456' } }, { new: true });
+    expect(users.findByIdAndUpdate).toHaveBeenCalledWith(
+      'u1',
+      { pixels: { meta: '123456' } },
+      { new: true },
+    );
   });
 
   it('turns a duplicate username (unique index) into 409', async () => {
     users.findByIdAndUpdate.mockRejectedValue({ code: 11000 });
-    await expect(service.editProfireUser('u1', { username: 'maria' })).rejects.toBeInstanceOf(ConflictException);
+    await expect(
+      service.editProfireUser('u1', { username: 'maria' }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it('lets other database errors through', async () => {
     users.findByIdAndUpdate.mockRejectedValue(new Error('boom'));
-    await expect(service.editProfireUser('u1', { username: 'maria' })).rejects.toThrow('boom');
+    await expect(
+      service.editProfireUser('u1', { username: 'maria' }),
+    ).rejects.toThrow('boom');
   });
 
   it('rejects a social link with a dangerous or wrong URL (400)', async () => {
-    await expect(service.editProfireUser('u1', { socials: [{ network: 'instagram', url: 'javascript:alert(1)' }] })).rejects.toBeInstanceOf(BadRequestException);
-    await expect(service.editProfireUser('u1', { socials: [{ network: 'email', url: 'https://x.com' }] })).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.editProfireUser('u1', {
+        socials: [{ network: 'instagram', url: 'javascript:alert(1)' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.editProfireUser('u1', {
+        socials: [{ network: 'email', url: 'https://x.com' }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
     expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
   });
 
   it('saves valid socials', async () => {
-    const socials = [{ network: 'instagram', url: 'https://instagram.com/m' }, { network: 'email', url: 'mailto:a@b.com' }];
+    const socials = [
+      { network: 'instagram', url: 'https://instagram.com/m' },
+      { network: 'email', url: 'mailto:a@b.com' },
+    ];
     await service.editProfireUser('u1', { socials });
-    expect(users.findByIdAndUpdate).toHaveBeenCalledWith('u1', { socials }, { new: true });
+    expect(users.findByIdAndUpdate).toHaveBeenCalledWith(
+      'u1',
+      { socials },
+      { new: true },
+    );
   });
 });

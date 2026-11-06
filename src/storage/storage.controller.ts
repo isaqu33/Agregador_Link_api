@@ -1,3 +1,4 @@
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Controller,
   Get,
@@ -14,6 +15,8 @@ import { Response } from 'express';
 import { JwtAuthGuard } from '../jwt/jwt-auth.guard';
 import { MAX_IMAGE_BYTES, StorageService } from './storage.service';
 
+@ApiTags('storage')
+@ApiBearerAuth()
 @Controller('media')
 export class StorageController {
   constructor(private readonly storage: StorageService) {}

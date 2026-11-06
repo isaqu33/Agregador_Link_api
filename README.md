@@ -1,14 +1,40 @@
-# FaceLink — API
+<p align="center"><img src="assets/logo.svg" alt="FaceLink" width="300"></p>
 
-API do agregador de links (estilo Linktree): contas, perfil público por `@usuario`, **várias páginas por conta**, links de
-12 tipos (com miniatura, destaque, agendamento, player e senha), captura de e-mail, upload de imagens, analytics com
-**tempo real (SSE)**, exportação CSV, confirmação de e-mail, recuperação de senha e login com Google.
+<h3 align="center">API do agregador de links (estilo Linktree): segura, testada e observável</h3>
+
+<p align="center">
+  <img alt="NestJS" src="https://img.shields.io/badge/NestJS-8-E0234E?logo=nestjs&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-4-3178C6?logo=typescript&logoColor=white">
+  <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-6-47A248?logo=mongodb&logoColor=white">
+  <img alt="Redis" src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white">
+  <img alt="Jest" src="https://img.shields.io/badge/testes-164%20unit%C3%A1rios%20%2B%20integra%C3%A7%C3%A3o-15C213?logo=jest&logoColor=white">
+  <img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-Swagger-85EA2D?logo=swagger&logoColor=black">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
+</p>
+
+Contas, perfil público por `@usuario`, **várias páginas por conta**, links de 12 tipos (miniatura, destaque, agendamento,
+player e senha), captura de e-mail, upload de imagens, analytics com **tempo real (SSE) que funciona com várias
+instâncias**, exportação CSV, confirmação de e-mail, recuperação de senha e login com Google.
 
 Este repositório é o **backend** (NestJS). O front fica em
 [Agregador_Link_Front](https://github.com/isaqu33/Agregador_Link_Front) (veja lá as capturas de tela do produto).
 
-**Stack:** NestJS 8 · TypeScript · MongoDB (Mongoose) · Redis (ioredis) · JWT · Azure Blob Storage (Azurite em dev) ·
-nodemailer · Helmet · `@nestjs/throttler` · Jest.
+| Documentação interativa (Swagger em `/docs`) | Testes de integração e unitários |
+|---|---|
+| ![Swagger](screenshots/swagger.png) | ![Testes](screenshots/testes.png) |
+
+## O que este projeto demonstra
+
+| Área | O que foi aplicado |
+|---|---|
+| **Segurança** (OWASP API Top 10, 2023) | autorização por dono (404 em vez de 403), rate limit por IP/rota e bloqueio por conta, bcrypt, tokens de uso único só com hash, validação rígida (`whitelist`), Helmet, CORS restrito, limite de corpo, anti-enumeração de contas, honeypot, CSV sem injeção de fórmula |
+| **Testes** | 164 unitários (Jest) + testes HTTP (Supertest) + **integração contra MongoDB real** (Testcontainers) |
+| **Escalabilidade** | estado compartilhado em Redis (rate limit, anti-duplicidade e pub/sub do SSE): um clique registrado na instância B chega ao painel conectado na A; sem Redis cai para memória |
+| **Observabilidade** | logs JSON (Pino) com `x-request-id`, segredos redigidos, `/health/live` e `/health/ready`, encerramento gracioso |
+| **Contrato** | OpenAPI/Swagger gerado do código (`/docs`), DTOs validados com `class-validator` |
+| **Qualidade e CI** | Prettier + ESLint + `tsc` + GitHub Actions (formatação, lint, tipos, testes, build, integração) + Dependabot |
+| **Arquitetura** | módulos por domínio, controllers finos, regras puras e testáveis (`common/`), OAuth servidor-a-servidor com segredo compartilhado |
+| **Operação** | Docker Compose (API, MongoDB, Redis, Azurite), 12-factor (`.env.example`), seed do primeiro usuário |
 
 ## Arquitetura
 
@@ -163,8 +189,9 @@ Suba a API **antes** do front: ela cria a rede `agregador-network` que o front u
 ## Testes
 
 ```bash
-npm test            # 165 testes em 12 suítes, sem precisar de banco
-npx tsc --noEmit
+npm test              # 164 testes em 11 suítes, sem precisar de banco
+npm run test:int      # integração: sobe um MongoDB real em container (Testcontainers; precisa de Docker)
+npm run typecheck && npm run lint:check && npm run format:check
 ```
 
 | Suíte | O que garante |
@@ -179,15 +206,24 @@ npx tsc --noEmit
 | `http-security` | controller + guard + validação reais: Helmet, 429 com `Retry-After`, limite por IP/rota, 400 de validação |
 
 Os models do Mongoose são simulados (`src/test-utils.ts`). Foi verificado que os testes falham quando as regras são
-quebradas de propósito (bloqueio de login, checagem de dono, anti-duplicidade). Ainda **não há teste de integração
-contra um MongoDB real**.
+quebradas de propósito (bloqueio de login, checagem de dono, anti-duplicidade). O teste de integração
+(`test/api.int-spec.ts`) sobe a API inteira contra um MongoDB real: readiness, cadastro → login → criar link → página
+pública, validação e 401.
+
+## Operação
+
+- **Logs JSON** (pino) com `x-request-id` por requisição; `authorization` e `cookie` ficam fora do log. `LOG_LEVEL` ajusta o nível.
+- **Health:** `GET /health/live` e `GET /health/ready` (Mongo e Redis). Encerramento gracioso em SIGTERM.
+- **OpenAPI:** Swagger UI em `/docs` (desligado em produção, salvo `SWAGGER=true`).
+- **CI:** GitHub Actions (formatação, lint, tipos, testes, build e integração), sem deploy.
 
 ## Estrutura
 
 ```
 src/
   auth/ jwt/ user/ links/ analytics/ mail/ storage/ cache/ common/
-  main.ts                 Helmet, CORS, ValidationPipe
+  main.ts                 Pino, Helmet, CORS, limite de corpo, ValidationPipe, Swagger
+  health/                 liveness e readiness
   app.module.ts           módulos + guard global de rate limit
   seed.ts                 primeiro usuário
   *.spec.ts               testes ao lado do código
@@ -198,7 +234,7 @@ src/
 - Sem SMTP o e-mail só aparece no log (suficiente em dev; configure `SMTP_*` para produção).
 - O limite por IP usa `x-forwarded-for`: em produção, o proxy reverso na frente da API **precisa sobrescrever** esse
   cabeçalho, senão o cliente poderia forjá-lo (o bloqueio por conta continua valendo).
-- Sem testes de integração com banco real; sem CI configurado.
+- O workflow de CI foi escrito mas ainda não rodou no GitHub (nada foi enviado); cada passo foi executado localmente.
 
 ## Atenção antes de tornar o repositório público
 

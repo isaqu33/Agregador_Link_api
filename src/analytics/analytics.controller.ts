@@ -1,3 +1,4 @@
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import {
   Body,
   Controller,
@@ -19,6 +20,8 @@ import { TrackClickDto, TrackViewDto } from './dto/track.dto';
 
 const visitor = clientIp;
 
+@ApiTags('analytics')
+@ApiBearerAuth()
 @Controller('analytics')
 export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
@@ -51,7 +54,11 @@ export class AnalyticsController {
 
   @Get('summary')
   @UseGuards(JwtAuthGuard)
-  summary(@Req() req, @Query('days') days?: string, @Query('pageId') pageId?: string) {
+  summary(
+    @Req() req,
+    @Query('days') days?: string,
+    @Query('pageId') pageId?: string,
+  ) {
     return this.analytics.summary(req.user.sub, clampDays(days), pageId);
   }
 
@@ -66,8 +73,13 @@ export class AnalyticsController {
   ) {
     const k = kind === 'links' ? 'links' : 'daily';
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="analytics-${k}.csv"`);
-    res.send(await this.analytics.exportCsv(req.user.sub, clampDays(days), k, pageId));
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="analytics-${k}.csv"`,
+    );
+    res.send(
+      await this.analytics.exportCsv(req.user.sub, clampDays(days), k, pageId),
+    );
   }
 }
 

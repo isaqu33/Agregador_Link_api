@@ -50,7 +50,9 @@ export function linkError(type: string, link: string): string | null {
       return null; // a header / e-mail form has no destination
     case 'Pix':
       // Pix key or "copia e cola" payload: copied by the visitor, never opened as a URL
-      return /^[^\u0000-\u001f]{1,600}$/.test(link) ? null : 'Chave Pix inválida';
+      return /^[^\u0000-\u001f]{1,600}$/.test(link)
+        ? null
+        : 'Chave Pix inválida';
     case 'Email':
       return MAILTO.test(link) ? null : 'Use um e-mail válido (mailto:)';
     case 'Telefone':
@@ -72,9 +74,26 @@ export function socialUrlError(network: string, url: string): string | null {
 
 // /@username lives next to real routes of the front, so these are never available.
 export const RESERVED_USERNAMES = new Set([
-  'admin', 'api', 'assets', 'costumer', 'login', 'register', 'media', 'u',
-  'forgot-password', 'reset-password', 'verify-email', 'static', 'favicon.ico',
-  'robots.txt', 'sitemap.xml', 'facelink', 'suporte', 'support', 'null', 'undefined',
+  'admin',
+  'api',
+  'assets',
+  'costumer',
+  'login',
+  'register',
+  'media',
+  'u',
+  'forgot-password',
+  'reset-password',
+  'verify-email',
+  'static',
+  'favicon.ico',
+  'robots.txt',
+  'sitemap.xml',
+  'facelink',
+  'suporte',
+  'support',
+  'null',
+  'undefined',
 ]);
 
 export const USERNAME_PATTERN = /^[a-z0-9][a-z0-9_.]{2,29}$/;
