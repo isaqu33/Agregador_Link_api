@@ -14,6 +14,7 @@ describe('PagesService', () => {
   let links: Record<string, jest.Mock>;
   let leads: Record<string, jest.Mock>;
   let events: Record<string, jest.Mock>;
+  let handles: Record<string, jest.Mock>;
   let service: PagesService;
   const owned = (extra: object = {}) => {
     const doc: any = {
@@ -39,12 +40,17 @@ describe('PagesService', () => {
     links = { find: jest.fn(), deleteMany: jest.fn() };
     leads = { deleteMany: jest.fn() };
     events = { deleteMany: jest.fn() };
+    handles = {
+      rename: jest.fn((_o, _n, _c, apply) => apply()),
+      release: jest.fn(),
+    };
     service = new PagesService(
       pages as any,
       users as any,
       links as any,
       leads as any,
       events as any,
+      handles as any,
     );
   });
 

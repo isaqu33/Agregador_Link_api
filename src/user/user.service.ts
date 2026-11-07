@@ -10,6 +10,7 @@ import {
   isDuplicateKey,
   profileChanges,
 } from '../common/profile-rules';
+import { HandlesService } from '../handles/handles.service';
 import { Page, PageDocument } from '../pages/schemas/page.schema';
 
 @Injectable()
@@ -18,6 +19,7 @@ export class UserService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Link.name) private linkModel: Model<LinkDocument>,
     @InjectModel(Page.name) private pageModel: Model<PageDocument>,
+    private handles: HandlesService,
   ) {}
 
   // Includes the password hash: for login only, never return this to a client.
@@ -69,7 +71,7 @@ export class UserService {
   }
 
   async editProfireUser(userId: string, dto: UpdateUserDto) {
-    checkProfileInput(dto);
+    checkProfileInput(dto, userId);
     if (
       dto.username !== undefined &&
       (await this.pageModel.exists({ username: dto.username }))
@@ -78,12 +80,15 @@ export class UserService {
     }
 
     try {
-      return await this.userModel.findByIdAndUpdate(
-        userId,
-        profileChanges(dto),
-        {
+      const current =
+        dto.username === undefined
+          ? undefined
+          : (await this.userModel.findById(userId).select('username'))
+              ?.username;
+      return await this.handles.rename(userId, dto.username, current, () =>
+        this.userModel.findByIdAndUpdate(userId, profileChanges(dto), {
           new: true,
-        },
+        }),
       );
     } catch (error) {
       if (isDuplicateKey(error)) {

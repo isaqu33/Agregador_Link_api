@@ -1,10 +1,16 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { isValidObjectId, Model, Types } from 'mongoose';
 import { toCsv } from '../common/csv';
 import { Link, LinkDocument } from '../links/schemas/link.schema';
 import { CaptureLeadDto } from './dto/lead.dto';
 import { Lead, LeadDocument } from './schemas/lead.schema';
+
+const MAX_EXPORT = 10000;
 
 const pageFilter = (pageId?: string) =>
   pageId && isValidObjectId(pageId)
@@ -41,27 +47,55 @@ export class LeadsService {
     return { ok: true };
   }
 
-  async list(userId: string, pageId?: string) {
-    const [leads, forms] = await Promise.all([
+  /**
+   * One page of contacts, newest first. The cursor is the `_id` of the last row already seen
+   * (ObjectIds grow with time): "give me what is older than this". Unlike skip/limit it stays fast
+   * on page 1000 and does not repeat or skip rows when new contacts arrive meanwhile.
+   */
+  async list(
+    userId: string,
+    pageId?: string,
+    options: { limit?: number; cursor?: string } = {},
+  ) {
+    const limit = Math.min(Math.max(Math.trunc(options.limit ?? 50), 1), 200);
+    const scope = { userId, ...pageFilter(pageId) };
+    let filter: Record<string, unknown> = scope;
+    if (options.cursor) {
+      if (!isValidObjectId(options.cursor)) {
+        throw new BadRequestException('cursor inválido');
+      }
+      filter = { ...scope, _id: { $lt: new Types.ObjectId(options.cursor) } };
+    }
+
+    const [rows, forms, total] = await Promise.all([
       this.leadModel
-        .find({ userId, ...pageFilter(pageId) })
-        .sort({ createdAt: -1 })
-        .limit(500),
-      this.linkModel
-        .find({ userId, type: 'Newsletter', ...pageFilter(pageId) })
-        .select('name'),
+        .find(filter)
+        .sort({ _id: -1 })
+        .limit(limit + 1),
+      this.linkModel.find({ ...scope, type: 'Newsletter' }).select('name'),
+      this.leadModel.countDocuments(scope),
     ]);
-    const formName = new Map(forms.map((f) => [String(f._id), f.name]));
+    const hasMore = rows.length > limit;
+    const leads = rows.slice(0, limit);
     return {
-      total: leads.length,
-      leads: leads.map((l) => ({
-        id: String(l._id),
-        email: l.email,
-        name: l.name,
-        form: formName.get(String(l.linkId)) ?? '(formulário removido)',
-        createdAt: l.createdAt,
-      })),
+      total,
+      leads: this.present(leads, forms),
+      nextCursor: hasMore ? String(leads[leads.length - 1]._id) : null,
     };
+  }
+
+  private present(
+    leads: LeadDocument[],
+    forms: { _id: unknown; name: string }[],
+  ) {
+    const formName = new Map(forms.map((f) => [String(f._id), f.name]));
+    return leads.map((l) => ({
+      id: String(l._id),
+      email: l.email,
+      name: l.name,
+      form: formName.get(String(l.linkId)) ?? '(formulário removido)',
+      createdAt: l.createdAt,
+    }));
   }
 
   async remove(userId: string, id: string) {
@@ -72,10 +106,14 @@ export class LeadsService {
   }
 
   async exportCsv(userId: string, pageId?: string) {
-    const { leads } = await this.list(userId, pageId);
+    const scope = { userId, ...pageFilter(pageId) };
+    const [rows, forms] = await Promise.all([
+      this.leadModel.find(scope).sort({ _id: -1 }).limit(MAX_EXPORT),
+      this.linkModel.find({ ...scope, type: 'Newsletter' }).select('name'),
+    ]);
     return toCsv(
       ['email', 'nome', 'formulario', 'data'],
-      leads.map((l) => [
+      this.present(rows, forms).map((l) => [
         l.email,
         l.name,
         l.form,

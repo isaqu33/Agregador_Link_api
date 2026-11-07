@@ -7,7 +7,7 @@
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-4-3178C6?logo=typescript&logoColor=white">
   <img alt="MongoDB" src="https://img.shields.io/badge/MongoDB-6-47A248?logo=mongodb&logoColor=white">
   <img alt="Redis" src="https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white">
-  <img alt="Jest" src="https://img.shields.io/badge/testes-164%20unit%C3%A1rios%20%2B%20integra%C3%A7%C3%A3o-15C213?logo=jest&logoColor=white">
+  <img alt="Jest" src="https://img.shields.io/badge/testes-195%20unit%C3%A1rios%20%2B%20integra%C3%A7%C3%A3o-15C213?logo=jest&logoColor=white">
   <img alt="OpenAPI" src="https://img.shields.io/badge/OpenAPI-Swagger-85EA2D?logo=swagger&logoColor=black">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
 </p>
@@ -28,7 +28,8 @@ Este repositório é o **backend** (NestJS). O front fica em
 | Área | O que foi aplicado |
 |---|---|
 | **Segurança** (OWASP API Top 10, 2023) | autorização por dono (404 em vez de 403), rate limit por IP/rota e bloqueio por conta, bcrypt, tokens de uso único só com hash, validação rígida (`whitelist`), Helmet, CORS restrito, limite de corpo, anti-enumeração de contas, honeypot, CSV sem injeção de fórmula |
-| **Testes** | 164 unitários (Jest) + testes HTTP (Supertest) + **integração contra MongoDB real** (Testcontainers) |
+| **Testes** | 195 unitários (Jest) + testes HTTP (Supertest) + **integração contra MongoDB e Redis reais** (Testcontainers), incluindo **testes que reproduzem condições de corrida** |
+| **Concorrência** | contadores atômicos (Lua no Redis, `$inc` no Mongo), reserva de `@username` por chave única, rate limit exato sob rajada, lista desatualizada recusada (409), paginação por cursor, TTL nos eventos: cada correção tem um teste de corrida |
 | **Escalabilidade** | estado compartilhado em Redis (rate limit, anti-duplicidade e pub/sub do SSE): um clique registrado na instância B chega ao painel conectado na A; sem Redis cai para memória |
 | **Observabilidade** | logs JSON (Pino) com `x-request-id`, segredos redigidos, `/health/live` e `/health/ready`, encerramento gracioso |
 | **Contrato** | OpenAPI/Swagger gerado do código (`/docs`), DTOs validados com `class-validator` |
@@ -84,17 +85,17 @@ flowchart LR
 | `POST /links/editLink` | JWT | `{id, name?, link?}`; só do dono |
 | `POST /links/deletLink` | JWT | `{idlink}` |
 | `POST /links/editActivet` | JWT | `{id, activation}` |
-| `POST /links/reorder` | JWT | `{ids:[...]}` na nova ordem |
+| `POST /links/reorder` | JWT | `{ids:[...]}` na nova ordem (lista inteira da página; desatualizada → 409) |
 | `GET /links/getDataUser/:id` | — | página pública (usuário ou página extra); `:id` é o id **ou** o `@username`; só links ativos e dentro do agendamento; links com senha vêm sem destino |
 | `POST /pages/create` · `/edit` · `/delete` · `GET /pages/:id` | JWT | páginas extras (máx. 5) |
 | `POST /leads` | — | e-mail do formulário público (sempre 200; honeypot e limite) |
-| `GET /leads` · `/leads/export` · `POST /leads/delete` | JWT | contatos: lista, CSV, remoção |
+| `GET /leads?limit=&cursor=` · `/leads/export` · `POST /leads/delete` | JWT | contatos: lista paginada por cursor, CSV, remoção |
 | `POST /auth/oauth` | segredo | servidor → servidor: login com Google |
 | `POST /analytics/view` · `/click` | — | registra visita (com dispositivo e origem) / clique (sempre 200) |
 | `GET /analytics/export` | JWT | CSV por dia ou por link |
 | `GET /analytics/summary?days=30` | JWT | totais, taxa, série por dia, cliques por link |
 | `GET /analytics/stream` | JWT | **SSE** com os eventos `view` e `click` da página do usuário |
-| `POST /media` · `GET /media/:userId/:file` | JWT / — | upload (JPEG/PNG/WebP/GIF até 5 MB) e leitura |
+| `POST /media` · `GET /media/:userId/:file` | JWT / — | upload (imagem até 5 MB ou vídeo MP4/WebM até 15 MB) e leitura com suporte a `Range` |
 
 Tipos de link aceitos (`type`): `Link, Spotify, Youtube, Whatsapp, Twitch, Email, Instagram, Tiktok, Telefone,
 Cabecalho, Pix, Newsletter`. O `link` é validado **pelo tipo**: `http(s)` (padrão), `mailto:` (Email), `tel:+…` (Telefone),
@@ -148,7 +149,7 @@ em 3 s conta uma vez) e os contadores de rate limit também são compartilhados.
 ## Modelo de dados (MongoDB, banco `agregador`)
 
 - **Page** (página extra) e **Lead** (e-mail coletado); o **Link** ganhou `thumbnail, featured, startAt, endAt, embed, locked, passwordHash, pageId`.
-- **User:** `name`, `email` (único), `password` (hash), `photoURL`, `template` (JSON: cor, formato, fonte, botão),
+- **User:** `name`, `email` (único), `password` (hash), `photoURL`, `template` (JSON validado: cor, formato, fonte, botão, cor do texto, fundo em imagem/vídeo, marca d'água),
   `title`, `about`, `username` (único, opcional), `socials[{network,url}]`, `emailVerified`, hashes de token.
 - **Link:** `name`, `link`, `type`, `order`, `isActivit`, `userId`.
 - **Event:** `userId`, `type` (`view`|`click`), `linkId?`, `createdAt` (índice por `userId` + data).
@@ -189,7 +190,7 @@ Suba a API **antes** do front: ela cria a rede `agregador-network` que o front u
 ## Testes
 
 ```bash
-npm test              # 164 testes em 11 suítes, sem precisar de banco
+npm test              # 195 testes em 15 suítes, sem precisar de banco
 npm run test:int      # integração: sobe um MongoDB real em container (Testcontainers; precisa de Docker)
 npm run typecheck && npm run lint:check && npm run format:check
 ```
@@ -235,8 +236,3 @@ src/
 - O limite por IP usa `x-forwarded-for`: em produção, o proxy reverso na frente da API **precisa sobrescrever** esse
   cabeçalho, senão o cliente poderia forjá-lo (o bloqueio por conta continua valendo).
 - O workflow de CI foi escrito mas ainda não rodou no GitHub (nada foi enviado); cada passo foi executado localmente.
-
-## Atenção antes de tornar o repositório público
-
-O histórico antigo deste repositório contém uma **chave do Firebase** e um `.env` antigos. **Revogue a chave** e limpe o
-histórico (ou publique a partir de um repositório novo) antes de abrir o código; enquanto isso, mantenha-o privado.

@@ -4,6 +4,7 @@ import { Event, EventSchema } from '../analytics/schemas/event.schema';
 import { Lead, LeadSchema } from '../leads/schemas/lead.schema';
 import { Link, LinkSchema } from '../links/schemas/link.schema';
 import { User, UserSchema } from '../user/schemas/user.schema';
+import { HandlesModule } from '../handles/handles.module';
 import { PagesController } from './pages.controller';
 import { PagesService } from './pages.service';
 import { Page, PageSchema } from './schemas/page.schema';
@@ -17,6 +18,7 @@ import { Page, PageSchema } from './schemas/page.schema';
       { name: Lead.name, schema: LeadSchema },
       { name: Event.name, schema: EventSchema },
     ]),
+    HandlesModule,
   ],
   controllers: [PagesController],
   providers: [PagesService],

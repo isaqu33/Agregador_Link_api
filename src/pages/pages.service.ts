@@ -12,6 +12,7 @@ import {
   isDuplicateKey,
   profileChanges,
 } from '../common/profile-rules';
+import { HandlesService } from '../handles/handles.service';
 import { Lead, LeadDocument } from '../leads/schemas/lead.schema';
 import { Link, LinkDocument } from '../links/schemas/link.schema';
 import { User, UserDocument } from '../user/schemas/user.schema';
@@ -28,6 +29,7 @@ export class PagesService {
     @InjectModel(Link.name) private linkModel: Model<LinkDocument>,
     @InjectModel(Lead.name) private leadModel: Model<LeadDocument>,
     @InjectModel(Event.name) private eventModel: Model<EventDocument>,
+    private handles: HandlesService,
   ) {}
 
   async create(userId: string, { name }: CreatePageDto) {
@@ -54,7 +56,7 @@ export class PagesService {
 
   async edit(userId: string, dto: EditPageDto) {
     const page = await this.findOwned(userId, dto.id);
-    checkProfileInput(dto);
+    checkProfileInput(dto, userId);
     if (
       dto.username !== undefined &&
       (await this.userModel.exists({ username: dto.username }))
@@ -63,12 +65,14 @@ export class PagesService {
     }
 
     try {
-      return await this.pageModel.findByIdAndUpdate(
-        page._id,
-        profileChanges(dto),
-        {
-          new: true,
-        },
+      return await this.handles.rename(
+        String(page._id),
+        dto.username,
+        page.username,
+        () =>
+          this.pageModel.findByIdAndUpdate(page._id, profileChanges(dto), {
+            new: true,
+          }),
       );
     } catch (error) {
       if (isDuplicateKey(error)) {
@@ -87,6 +91,8 @@ export class PagesService {
       this.eventModel.deleteMany({ userId, pageId: page._id }),
     ]);
     await page.deleteOne();
+    if (page.username)
+      await this.handles.release(page.username, String(page._id));
     return { ok: true };
   }
 

@@ -4,6 +4,16 @@ import Redis from 'ioredis';
 
 type Listener = (message: string) => void;
 
+// INCR + EXPIRE as ONE atomic step on the Redis side. Two separate commands would leave the key
+// without an expiry forever if the process died between them; checking TTL < 0 also heals keys
+// that already lost theirs.
+const INCR_WITH_TTL = `
+local n = redis.call('INCR', KEYS[1])
+if n == 1 or redis.call('TTL', KEYS[1]) < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+return n`;
+
 // Small shared state used by more than one API instance: counters with expiry and a pub/sub channel.
 // With REDIS_URL it goes through Redis (all instances agree); without it everything stays in this
 // process, which is fine for a single instance and for local development.
@@ -37,9 +47,7 @@ export class CacheService implements OnModuleDestroy {
   /** +1 on `key`; the counter disappears `ttlSeconds` after its first hit. Returns the new value. */
   async incr(key: string, ttlSeconds: number): Promise<number> {
     if (this.redis) {
-      const n = await this.redis.incr(key);
-      if (n === 1) await this.redis.expire(key, ttlSeconds);
-      return n;
+      return Number(await this.redis.eval(INCR_WITH_TTL, 1, key, ttlSeconds));
     }
     const now = Date.now();
     const current = this.counters.get(key);

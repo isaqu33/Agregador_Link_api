@@ -1,6 +1,7 @@
 import * as bcrypt from 'bcryptjs';
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,6 +16,8 @@ describe('LinksService', () => {
   let userModel: Record<string, jest.Mock>;
   let pageModel: Record<string, jest.Mock>;
   let cache: CacheService;
+  let counterModel: Record<string, jest.Mock>;
+  let seq: number;
   let service: LinksService;
 
   beforeEach(() => {
@@ -24,6 +27,14 @@ describe('LinksService', () => {
       create: jest.fn().mockImplementation(async (doc) => doc),
       countDocuments: jest.fn(),
       bulkWrite: jest.fn().mockResolvedValue({}),
+    };
+    seq = 0;
+    counterModel = {
+      exists: jest.fn().mockResolvedValue({ _id: 'k' }),
+      updateOne: jest.fn().mockResolvedValue({}),
+      findOneAndUpdate: jest
+        .fn()
+        .mockImplementation(async () => ({ seq: seq++ })),
     };
     userModel = { findById: jest.fn(), findOne: jest.fn() };
     pageModel = {
@@ -37,12 +48,13 @@ describe('LinksService', () => {
       userModel as any,
       pageModel as any,
       cache,
+      counterModel as any,
     );
   });
 
   describe('createlink', () => {
-    it('puts the new link at the end of the list', async () => {
-      linkModel.findOne.mockReturnValue(query({ order: 4 }));
+    it('puts the new link at the end of the list (position from the atomic counter)', async () => {
+      seq = 5;
       const created = await service.createlink(OID(1), {
         name: 'Site',
         link: 'https://a.com',
@@ -57,8 +69,33 @@ describe('LinksService', () => {
       });
     });
 
+    it('seeds a new counter after the highest existing position, once', async () => {
+      counterModel.exists.mockResolvedValue(null);
+      linkModel.findOne.mockReturnValue(query({ order: 4 }));
+      await service.createlink(OID(1), {
+        name: 'Site',
+        link: 'https://a.com',
+        type: 'Link',
+      });
+      expect(counterModel.updateOne).toHaveBeenCalledWith(
+        { _id: `link-order:${OID(1)}:main` },
+        { $setOnInsert: { seq: 4 } },
+        { upsert: true },
+      );
+    });
+
+    it('two creations at the same time never share a position', async () => {
+      const make = (n: number) =>
+        service.createlink(OID(1), {
+          name: `L${n}`,
+          link: 'https://a.com',
+          type: 'Link',
+        });
+      const all: any[] = await Promise.all([1, 2, 3, 4, 5].map(make));
+      expect(new Set(all.map((l) => l.order)).size).toBe(5);
+    });
+
     it('starts at order 0 for the first link', async () => {
-      linkModel.findOne.mockReturnValue(query(null));
       const created: any = await service.createlink(OID(1), {
         name: 'Site',
         link: 'https://a.com',
@@ -206,8 +243,19 @@ describe('LinksService', () => {
   });
 
   describe('reorder', () => {
+    // 1st count = owned ids, 2nd = links in the page, 3rd = sent ids that are in that page
+    const counts = (owned: number, inPage: number, same: number) =>
+      linkModel.countDocuments
+        .mockResolvedValueOnce(owned)
+        .mockResolvedValueOnce(inPage)
+        .mockResolvedValueOnce(same);
+
+    beforeEach(() => {
+      linkModel.findOne.mockReturnValue(query({ pageId: null }));
+    });
+
     it('writes order = position for every id', async () => {
-      linkModel.countDocuments.mockResolvedValue(3);
+      counts(3, 3, 3);
       await service.reorder(OID(1), [OID(10), OID(11), OID(12)]);
       const ops = linkModel.bulkWrite.mock.calls[0][0];
       expect(
@@ -226,7 +274,7 @@ describe('LinksService', () => {
     });
 
     it("rejects the whole list if any id is not the user's (404), writing nothing", async () => {
-      linkModel.countDocuments.mockResolvedValue(2); // 3 sent, 2 owned
+      linkModel.countDocuments.mockResolvedValueOnce(2); // 3 sent, 2 owned
       await expect(
         service.reorder(OID(1), [OID(10), OID(11), OID(12)]),
       ).rejects.toBeInstanceOf(NotFoundException);
@@ -234,13 +282,28 @@ describe('LinksService', () => {
     });
 
     it('does not count malformed ids as owned', async () => {
-      linkModel.countDocuments.mockResolvedValue(1);
+      linkModel.countDocuments.mockResolvedValueOnce(1);
       await expect(
         service.reorder(OID(1), [OID(10), 'nao-e-id']),
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(linkModel.countDocuments.mock.calls[0][0]._id.$in).toEqual([
         OID(10),
       ]);
+    });
+
+    it('answers 409 when the list is stale (the page now has more links), writing nothing', async () => {
+      counts(2, 3, 2); // client sent 2 ids, the page has 3 links now
+      await expect(
+        service.reorder(OID(1), [OID(10), OID(11)]),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(linkModel.bulkWrite).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 when the ids mix links of different pages', async () => {
+      counts(2, 2, 1);
+      await expect(
+        service.reorder(OID(1), [OID(10), OID(11)]),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -530,10 +593,12 @@ describe('LinksService', () => {
         pageId: OID(7),
       });
       expect(String(created.pageId)).toBe(OID(7));
-      expect(linkModel.findOne).toHaveBeenLastCalledWith({
-        userId: OID(1),
-        pageId: expect.anything(),
-      }); // order is per page
+      // the position counter is per page
+      expect(counterModel.findOneAndUpdate).toHaveBeenLastCalledWith(
+        { _id: `link-order:${OID(1)}:${OID(7)}` },
+        { $inc: { seq: 1 } },
+        { new: true },
+      );
     });
 
     it('public: an @username that is not a user resolves to an extra page and lists only its links', async () => {

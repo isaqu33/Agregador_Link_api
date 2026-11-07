@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { query } from '../test-utils';
 import { LeadsService } from './leads.service';
 
@@ -14,6 +14,7 @@ describe('LeadsService', () => {
       updateOne: jest.fn().mockResolvedValue({}),
       find: jest.fn(),
       deleteOne: jest.fn(),
+      countDocuments: jest.fn().mockResolvedValue(1),
     };
     linkModel = { findOne: jest.fn(), find: jest.fn() };
     service = new LeadsService(leadModel as any, linkModel as any);
@@ -95,6 +96,56 @@ describe('LeadsService', () => {
 
     await service.list(OID(1), OID(7));
     expect(String(leadModel.find.mock.calls[1][0].pageId)).toBe(OID(7));
+  });
+
+  describe('cursor pagination', () => {
+    const rows = (ids: number[]) =>
+      ids.map((n) => ({
+        _id: OID(n),
+        email: `p${n}@x.com`,
+        linkId: OID(9),
+        createdAt: new Date(),
+      }));
+
+    beforeEach(() => {
+      linkModel.find.mockReturnValue(query([{ _id: OID(9), name: 'F' }]));
+      leadModel.countDocuments.mockResolvedValue(7);
+    });
+
+    it('asks for one row more than the limit to know if there is a next page', async () => {
+      const q = query(rows([30, 29, 28]));
+      const limit = jest.spyOn(q, 'limit');
+      leadModel.find.mockReturnValue(q);
+      const res = await service.list(OID(1), undefined, { limit: 2 });
+      expect(limit).toHaveBeenCalledWith(3);
+      expect(res.leads).toHaveLength(2);
+      expect(res.nextCursor).toBe(OID(29));
+      expect(res.total).toBe(7);
+    });
+
+    it('the last page has no cursor', async () => {
+      leadModel.find.mockReturnValue(query(rows([2, 1])));
+      const res = await service.list(OID(1), undefined, { limit: 5 });
+      expect(res.nextCursor).toBeNull();
+    });
+
+    it('the cursor means "older than this id"', async () => {
+      leadModel.find.mockReturnValue(query([]));
+      await service.list(OID(1), undefined, { cursor: OID(29) });
+      const filter = leadModel.find.mock.calls[0][0];
+      expect(String(filter._id.$lt)).toBe(OID(29));
+    });
+
+    it('rejects a malformed cursor (400) and clamps the limit', async () => {
+      await expect(
+        service.list(OID(1), undefined, { cursor: 'xx' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      const q = query([]);
+      const limit = jest.spyOn(q, 'limit');
+      leadModel.find.mockReturnValue(q);
+      await service.list(OID(1), undefined, { limit: 99999 });
+      expect(limit).toHaveBeenCalledWith(201);
+    });
   });
 
   it('removes only a lead of the owner (404 otherwise)', async () => {

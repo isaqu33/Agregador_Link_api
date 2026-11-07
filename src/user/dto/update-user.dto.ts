@@ -50,10 +50,10 @@ export class UpdateUserDto {
   @MaxLength(500)
   photoURL?: string;
 
-  // JSON string: { cor, formato, fonte, botao }
+  // JSON string: { cor, formato, fonte, botao, texto, fundoMidia, marca }
   @IsOptional()
   @IsString()
-  @MaxLength(500)
+  @MaxLength(1000)
   template?: string;
 
   @IsOptional()

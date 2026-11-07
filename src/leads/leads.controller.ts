@@ -32,8 +32,16 @@ export class LeadsController {
 
   @Get()
   @UseGuards(JwtAuthGuard)
-  list(@Req() req, @Query('pageId') pageId?: string) {
-    return this.leads.list(req.user.sub, pageId);
+  list(
+    @Req() req,
+    @Query('pageId') pageId?: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+  ) {
+    return this.leads.list(req.user.sub, pageId, {
+      limit: limit === undefined ? undefined : Number(limit) || undefined,
+      cursor,
+    });
   }
 
   @Get('export')

@@ -1,15 +1,26 @@
 import { BadRequestException, ConflictException } from '@nestjs/common';
+import { query } from '../test-utils';
 import { UserService } from './user.service';
 
 describe('UserService.editProfireUser', () => {
   let users: Record<string, jest.Mock>;
   let pages: Record<string, jest.Mock>;
+  let handles: Record<string, jest.Mock>;
   let service: UserService;
 
   beforeEach(() => {
-    users = { findByIdAndUpdate: jest.fn().mockResolvedValue({}) };
+    users = {
+      findByIdAndUpdate: jest.fn().mockResolvedValue({}),
+      findById: jest.fn().mockReturnValue(query({ username: 'antigo' })),
+    };
     pages = { exists: jest.fn().mockResolvedValue(null) };
-    service = new UserService(users as any, {} as any, pages as any);
+    handles = { rename: jest.fn((_o, _n, _c, apply) => apply()) };
+    service = new UserService(
+      users as any,
+      {} as any,
+      pages as any,
+      handles as any,
+    );
   });
 
   it('only sends the fields that were provided', async () => {
@@ -37,6 +48,21 @@ describe('UserService.editProfireUser', () => {
       service.editProfireUser('u1', { username: 'loja' }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(users.findByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  it('renames through the claim: new name, current name, then the update', async () => {
+    await service.editProfireUser('u1', { username: 'maria' });
+    expect(handles.rename).toHaveBeenCalledWith(
+      'u1',
+      'maria',
+      'antigo',
+      expect.any(Function),
+    );
+  });
+
+  it('does not touch claims when the username is not being changed', async () => {
+    await service.editProfireUser('u1', { title: 'x' });
+    expect(users.findById).not.toHaveBeenCalled();
   });
 
   it('stores pixels without empty ids', async () => {

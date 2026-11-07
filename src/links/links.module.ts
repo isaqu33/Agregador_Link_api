@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { LinksService } from './links.service';
 import { LinksController } from './links.controller';
 import { Link, LinkSchema } from './schemas/link.schema';
+import { Counter, CounterSchema } from './schemas/counter.schema';
 import { User, UserSchema } from './../user/schemas/user.schema';
 import { Page, PageSchema } from './../pages/schemas/page.schema';
 
@@ -10,6 +11,7 @@ import { Page, PageSchema } from './../pages/schemas/page.schema';
   imports: [
     MongooseModule.forFeature([
       { name: Link.name, schema: LinkSchema },
+      { name: Counter.name, schema: CounterSchema },
       { name: User.name, schema: UserSchema },
       { name: Page.name, schema: PageSchema },
     ]),

@@ -1,6 +1,7 @@
 import { MongooseModule } from '@nestjs/mongoose';
 import { Module } from '@nestjs/common';
 import { Link, LinkSchema } from './../links/schemas/link.schema';
+import { HandlesModule } from '../handles/handles.module';
 import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { User, UserSchema } from './schemas/user.schema';
@@ -13,6 +14,7 @@ import { Page, PageSchema } from './../pages/schemas/page.schema';
       { name: Link.name, schema: LinkSchema },
       { name: Page.name, schema: PageSchema },
     ]),
+    HandlesModule,
   ],
   controllers: [UserController],
   providers: [UserService],

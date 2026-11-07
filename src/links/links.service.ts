@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -17,6 +18,8 @@ import { User, UserDocument } from './../user/schemas/user.schema';
 import { CreateLinkDto } from './dto/create-link.dto';
 import { EditLinkDto } from './dto/edit-link.dto';
 import { LinkOptionsDto } from './dto/link-options.dto';
+import { isDuplicateKey } from '../common/profile-rules';
+import { Counter, CounterDocument } from './schemas/counter.schema';
 import { Link, LinkDocument } from './schemas/link.schema';
 
 const MAX_UNLOCK_FAILURES = 5;
@@ -29,6 +32,7 @@ export class LinksService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Page.name) private pageModel: Model<PageDocument>,
     private cache: CacheService,
+    @InjectModel(Counter.name) private counterModel: Model<CounterDocument>,
   ) {}
 
   async createlink(userId: string, dto: CreateLinkDto) {
@@ -39,11 +43,7 @@ export class LinksService {
     const extras = await this.buildExtras(userId, type, link, dto);
 
     // goes to the end of the list (of its page)
-    const last = await this.linkModel
-      .findOne({ userId, pageId })
-      .sort({ order: -1 })
-      .select('order');
-    const order = last ? last.order + 1 : 0;
+    const order = await this.nextOrder(userId, pageId);
 
     return this.linkModel.create({
       name,
@@ -164,7 +164,9 @@ export class LinksService {
     return found.save();
   }
 
-  // Position i in `ids` becomes order i. Every id must belong to the user.
+  // Position i in `ids` becomes order i. Every id must belong to the user, and the list must be
+  // the WHOLE list of one page: if another device added or removed a link meanwhile, the client's
+  // copy is stale and we answer 409 instead of silently dropping that change.
   async reorder(userId: string, ids: string[]) {
     const owned = await this.linkModel.countDocuments({
       _id: { $in: ids.filter((id) => isValidObjectId(id)) },
@@ -172,6 +174,24 @@ export class LinksService {
     });
     if (owned !== ids.length)
       throw new NotFoundException('Link não encontrado');
+
+    const first = await this.linkModel
+      .findOne({ _id: ids[0], userId })
+      .select('pageId');
+    const inPage = await this.linkModel.countDocuments({
+      userId,
+      pageId: first?.pageId ?? null,
+    });
+    const sameList = await this.linkModel.countDocuments({
+      _id: { $in: ids },
+      userId,
+      pageId: first?.pageId ?? null,
+    });
+    if (inPage !== ids.length || sameList !== ids.length) {
+      throw new ConflictException(
+        'A lista mudou em outro lugar. Recarregue e tente de novo.',
+      );
+    }
 
     await this.linkModel.bulkWrite(
       ids.map((id, order) => ({
@@ -183,6 +203,37 @@ export class LinksService {
   }
 
   // --- helpers ---
+
+  /**
+   * Next position of a list, handed out by an atomic `$inc`. The old "read the last order, add 1,
+   * save" gave the same number to creations that ran at the same time.
+   */
+  private async nextOrder(userId: string, pageId: Types.ObjectId | null) {
+    const key = `link-order:${userId}:${pageId ?? 'main'}`;
+    if (!(await this.counterModel.exists({ _id: key }))) {
+      // first time for this list: start after the highest position it already has
+      const last = await this.linkModel
+        .findOne({ userId, pageId })
+        .sort({ order: -1 })
+        .select('order');
+      try {
+        await this.counterModel.updateOne(
+          { _id: key },
+          { $setOnInsert: { seq: last ? last.order : -1 } },
+          { upsert: true },
+        );
+      } catch (error) {
+        // someone else seeded it in the meantime, which is exactly what we wanted
+        if (!isDuplicateKey(error)) throw error;
+      }
+    }
+    const counter = await this.counterModel.findOneAndUpdate(
+      { _id: key },
+      { $inc: { seq: 1 } },
+      { new: true },
+    );
+    return counter.seq;
+  }
 
   // Validates the optional extras and returns the fields to store. `current` = link being edited.
   private async buildExtras(

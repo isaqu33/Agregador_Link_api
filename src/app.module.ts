@@ -16,6 +16,7 @@ import { LeadsModule } from './leads/leads.module';
 import { CacheModule } from './cache/cache.module';
 import { CacheService } from './cache/cache.service';
 import { RedisThrottlerStorage } from './cache/redis-throttler.storage';
+import { MemoryThrottlerStorage } from './cache/memory-throttler.storage';
 import { AppThrottlerGuard } from './common/app-throttler.guard';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
@@ -59,7 +60,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
         limit: 120,
         storage: cache.redis
           ? new RedisThrottlerStorage(cache.redis)
-          : undefined,
+          : new MemoryThrottlerStorage(),
       }),
     }),
     UserModule,

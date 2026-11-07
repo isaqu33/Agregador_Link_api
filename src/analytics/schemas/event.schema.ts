@@ -34,3 +34,8 @@ export class Event {
 export type EventDocument = HydratedDocument<Event>;
 export const EventSchema = SchemaFactory.createForClass(Event);
 EventSchema.index({ userId: 1, createdAt: -1 });
+
+// Raw events live 180 days, then MongoDB deletes them by itself (TTL index): the collection stops
+// growing forever and the summary only ever scans a bounded history. The panel offers up to 90 days.
+export const EVENT_TTL_SECONDS = 180 * 24 * 60 * 60;
+EventSchema.index({ createdAt: 1 }, { expireAfterSeconds: EVENT_TTL_SECONDS });
